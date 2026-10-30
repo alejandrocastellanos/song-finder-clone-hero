@@ -1,5 +1,9 @@
 # 🎸 CH Buscador
 
+![CH Buscador: busca cualquier canción para Clone Hero, si no trae tu nivel, te lo creamos](cover_readme.png)
+
+**▶ Úsala aquí: https://alejandrocastellanos.github.io/song-finder-clone-hero/**
+
 Busca canciones para **Clone Hero** y, si no traen la dificultad que necesitas, **te la genera automáticamente**.
 
 Muchas canciones hechas por la comunidad solo traen el nivel **Expert**. CH Buscador crea **Fácil, Medio y Difícil** a partir del Expert, para que cualquiera pueda tocarlas.
@@ -69,7 +73,7 @@ Como es una página estática, puedes publicarla gratis con **GitHub Pages**:
 
 1. Sube esta carpeta a un repositorio de GitHub.
 2. En el repositorio ve a **Settings → Pages**, elige la rama `main` y la carpeta `/ (root)`.
-3. En un minuto tendrás un enlace tipo `https://TU_USUARIO.github.io/ch-buscador/` para compartir.
+3. En un minuto tendrás un enlace tipo `https://alejandrocastellanos.github.io/song-finder-clone-hero/` para compartir.
 
 ## Cómo se generan las dificultades
 
