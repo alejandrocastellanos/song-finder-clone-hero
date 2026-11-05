@@ -57,7 +57,7 @@ const Preview = (() => {
             <span class="pv-avg sub"></span>
           </div>
           <div class="pv-row pv-foot">
-            <span class="pv-stats"></span>
+            <span><span class="pv-lyrst"></span><span class="pv-stats"></span></span>
             <div class="row" style="gap:8px">
               <button class="pv-extra pv-lyr hidden">🎤 Agregar letra</button>
               <button class="pv-extra pv-drm hidden">🥁 Crear batería</button>
@@ -330,6 +330,9 @@ const Preview = (() => {
   }
   function extraButtons() {
     $('.pv-lyr').classList.toggle('hidden', !tl || !extraFn || tl.lyrics.length > 0);
+    const st = $('.pv-lyrst');
+    st.className = 'pv-lyrst ' + (tl && tl.lyrics.length ? 'si' : 'no');
+    st.textContent = !tl ? '' : tl.lyrics.length ? `🎤 Con letra (${tl.lyrics.length} líneas): sale arriba mientras suena` : '🎤 Sin letra';
     $('.pv-drm').classList.toggle('hidden', !tl || !extraFn || !!tl.tracks.drums);
   }
   // result: { bytes, added, extras } with the song rebuilt

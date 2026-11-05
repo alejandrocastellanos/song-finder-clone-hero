@@ -247,7 +247,7 @@
 
   /* ---------- toasts & sparks ---------- */
   .toasts { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 60; display: grid; gap: 8px; width: min(440px, calc(100% - 24px)); }
-  .toast { padding: 14px 18px; border-radius: 8px; background: linear-gradient(180deg, #2a1810, #1a0f0b); border: 1px solid var(--fire1); box-shadow: 0 10px 30px rgba(0,0,0,.6), 0 0 24px rgba(255,61,0,.35); text-align: center; opacity: 0; transform: translateY(-12px); transition: opacity .35s, transform .35s; }
+  .toast { padding: 14px 18px; border-radius: 8px; background: linear-gradient(180deg, #2a1810, #1a0f0b); border: 1px solid var(--fire1); box-shadow: 0 10px 30px rgba(0,0,0,.6), 0 0 24px rgba(255,61,0,.35); text-align: center; opacity: 0; transform: translateY(-12px); transition: opacity .5s, transform .5s; }
   .toast.in { opacity: 1; transform: none; }
   .toast b { font-family: var(--display); font-weight: 400; font-size: 26px; letter-spacing: 1px; color: var(--fire3); }
   .toast small { color: var(--muted); }
@@ -302,12 +302,27 @@
   .pv-extra { padding: 6px 12px; font-size: 14px; }
   .consent { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); width: min(720px, calc(100% - 24px)); z-index: 70; display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 16px; border-radius: 8px; font-size: 14px; color: var(--muted); background: rgba(14,12,16,.97); border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(0,0,0,.6); }
   .consent button.primary { font-size: 18px; padding: 6px 16px; }
-  .counter { margin: 8px 0 0; font-size: 15px; color: var(--muted); }
-  .counter b { font-family: var(--display); font-weight: 400; font-size: 24px; letter-spacing: 1px; color: var(--fire3); }
+  .counter-row { text-align: center; }
+  .counter { display: inline-flex; align-items: baseline; gap: 10px; margin: 0 0 16px; padding: 6px 22px; border-radius: 999px; font-family: var(--display); font-size: clamp(20px, 3vw, 26px); letter-spacing: 1.5px; color: var(--text); background: rgba(255, 61, 0, .14); border: 1px solid rgba(255, 138, 0, .6); box-shadow: 0 0 22px rgba(255, 90, 0, .3); }
+  .counter b { font-weight: 400; font-size: clamp(32px, 5vw, 44px); line-height: 1; color: var(--fire3); text-shadow: 0 0 14px rgba(255, 138, 0, .7); }
   .pv-rate { padding: 6px 10px; border-radius: 6px; background: rgba(255,210,31,.05); }
   .pv-stars { display: inline-flex; }
   .star { padding: 0 3px; border: 0; background: none; font-size: 24px; line-height: 1; color: var(--dim); }
   .star.on, .star:hover { color: var(--gM); text-shadow: 0 0 8px rgba(255,210,31,.6); }
+  .save-link { display: inline-block; margin-left: 4px; padding: 3px 10px; border-radius: 4px; font-weight: 700; color: #1b0700; text-decoration: none; background: linear-gradient(180deg, var(--fire3), var(--fire2)); }
+  .song-bg { display: inline-flex; gap: 2px; }
+  .bg-btn.on { border-color: var(--gen, #5ab4ff); color: #9fd4ff; }
+  .bg-x { padding: 2px 8px; }
+  .pv-lyrst { font-size: 14px; font-weight: 600; margin-right: 10px; }
+  .pv-lyrst.si { color: var(--ok); } .pv-lyrst.no { color: var(--muted); }
+  .info { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .ic { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .ic.si { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+  .ic.no { color: var(--dim); }
+  .ic.add { color: #9fd4ff; border: 1px dashed #5ab4ff; }
+  .ic.wait { color: var(--dim); border-color: transparent; padding-left: 0; }
+  .period.on { border-color: var(--fire2); color: var(--fire3); }
+  @media (max-width: 860px) { .prow { grid-template-columns: 32px 1fr; } .prow > .row { grid-column: 2; } }
   .knobs-info { margin-top: 12px; font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .knobs-info b { color: #9fd4ff; font-weight: 600; }
   .pv-stats { color: var(--muted); font-size: 14px; }
@@ -343,7 +358,6 @@
   <div class="topbar"><button id="soundBtn" title="Sonidos de guitarra al buscar y al terminar descargas">🔇 Sonido</button></div>
   <h1 class="logo">CH Buscador</h1>
   <p class="tagline">Busca cualquier canción para Clone Hero · <b>si no trae tu nivel, te lo creamos</b></p>
-  <p class="counter hidden" id="counter"></p>
   <div class="highway" aria-hidden="true">
     <div class="road">
       <i class="note" style="--lane:0;--c:var(--gE);--d:0s"></i>
@@ -358,8 +372,10 @@
 </header>
 
 <main>
+  <div class="counter-row"><p class="counter hidden" id="counter"></p></div>
   <div class="tabs" role="tablist">
     <button id="tab-search" class="on">Buscar</button>
+    <button id="tab-top">🔥 Lo más descargado</button>
     <button id="tab-packs">Packs</button>
     <button id="tab-lib">Mi biblioteca</button>
     <button id="tab-audio">🧪 Crear desde audio</button>
@@ -384,8 +400,9 @@
       <span class="sub">Si le falta:</span>
       <label class="chk"><input type="checkbox" id="addLyrics" checked> 🎤 Agregar la letra</label>
       <label class="chk" title="Tarda unos segundos más por canción"><input type="checkbox" id="addDrums"> 🥁 Crear la batería</label>
-      <span class="sub bg-pick">🖼 Fondo: <b id="bgLabel"></b></span>
-      <label class="btn-file"><input type="file" id="bgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>Elegir imagen o video</label>
+      <span class="sub bg-pick">🖼 Imagen para todas: <b id="bgLabel"></b></span>
+      <label class="btn-file"><input type="file" id="bgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>Elegir</label>
+      <input type="file" id="songBgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>
       <button class="ghost chip hidden" id="bgClear">Quitar</button>
     </div>
     <div class="knobs-info" id="knobsInfo"></div>
@@ -420,13 +437,22 @@
         <span><span class="flames"><i class="on">🔥</i><i class="on">🔥</i><i>🔥</i></span> intensidad</span>
       </div>
     </div>
-    <div class="card hidden" id="topWeek"><h2>🔥 Lo más descargado esta semana</h2><div class="plist" id="topList"></div></div>
     <div class="results-head hidden" id="resultsHead"><span id="resultsCount"></span><button class="ghost" id="shareSearch">🔗 Compartir búsqueda</button></div>
     <div id="results" class="results"></div>
     <div class="more"><button id="moreBtn" class="hidden">Cargar más</button></div>
     <div class="bar row hidden" id="batchBar" style="justify-content:flex-end">
       <span class="sub" id="selCount"></span>
       <button class="primary" id="dlSel">Descargar seleccionadas</button>
+    </div>
+  </section>
+
+  <section id="view-top" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">🔥 Lo más descargado</h2>
+        <div class="row" style="gap:6px"><button id="topPeriodWeek" class="period on">Esta semana</button><button id="topPeriodAll" class="period">Histórico</button></div>
+      </div>
+      <div class="plist" id="topList" style="margin-top:12px"></div>
     </div>
   </section>
 

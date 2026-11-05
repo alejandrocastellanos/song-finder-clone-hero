@@ -37,7 +37,10 @@ const FX = (() => {
     const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = html;
     box.appendChild(t);
     requestAnimationFrame(() => t.classList.add('in'));
-    setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 400); }, ms);
+    setTimeout(() => dismiss(t), ms);
+  }
+  function dismiss(t, delay = 0) {
+    setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 500); }, delay);
   }
 
   function sparks(count = 140) {
@@ -67,5 +70,5 @@ const FX = (() => {
     })(last);
   }
 
-  return { strum, pick, toast, sparks, setSound, get soundOn() { return soundOn; } };
+  return { strum, pick, toast, dismiss, sparks, setSound, get soundOn() { return soundOn; } };
 })();

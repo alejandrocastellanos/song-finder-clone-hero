@@ -37,7 +37,7 @@ function showFolder() {
   if (canPickDir) {
     $('#folderLabel').innerHTML = dirHandle
       ? `Carpeta de destino: <b>${esc(dirHandle.name)}</b>`
-      : 'Carpeta de destino: <b>ninguna</b> (una canción se baja a Descargas; para varias te pediré la carpeta)';
+      : 'Carpeta de destino: <b>ninguna</b> (te la pediré cuando descargues)';
     return;
   }
   // Firefox and Safari have no folder picker; Brave ships with it turned off
@@ -51,16 +51,28 @@ async function pickFolder() {
   try { dirHandle = await window.showDirectoryPicker({ id: 'ch-songs', mode: 'readwrite' }); await kv('dir', dirHandle); showFolder(); return true; }
   catch { return false; }
 }
+// Browsers let a page start one download by itself and silently block the next ones,
+// so from the second on the person gets a link: a real click is never blocked.
+let autoSaved = 0;
+function deliver(name, blob) {
+  const url = URL.createObjectURL(blob);
+  if (autoSaved++) return { name, url };
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  return null;
+}
+const saveLink = l => `<a class="save-link" href="${l.url}" download="${esc(l.name)}">💾 Guardar</a>`;
+
+// returns { where, link }; with a link the file isn't saved until the person clicks it
 async function saveSong(name, bytes) {
-  if (dirHandle && await ensurePermission()) {
+  if (dirHandle && await ensurePermission().catch(() => false)) {
     const fh = await dirHandle.getFileHandle(name, { create: true });
     const w = await fh.createWritable(); await w.write(bytes); await w.close();
-    return 'guardada en ' + dirHandle.name;
+    return { where: 'guardada en ' + dirHandle.name };
   }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([bytes])); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  return 'descargada';
+  const link = deliver(name, new Blob([bytes]));
+  return link ? { where: 'lista: pulsa Guardar', link } : { where: 'enviada a tu carpeta de Descargas' };
 }
 
 /* ---------- download + generation ---------- */
@@ -82,7 +94,8 @@ function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knob
 /* ---------- extras: lyrics, drums and background ---------- */
 const askedFor = {};        // md5 -> { lyrics, drums } requested from the preview for one song
 const enrichedCache = new Map();
-let bgMedia = null;         // { name, data } chosen by the user, applied to what gets saved
+let bgMedia = null;         // { name, data } for all songs that have no image of their own
+const songBg = {};          // md5 -> { name, data } chosen for one song
 
 function extrasFlags(s) {
   const a = askedFor[s.md5] || {};
@@ -134,8 +147,9 @@ async function prepareFrom(s, rawPromise, onStep) {
   const added = [...out.added];
   if (extras.drums === 'added' || extras.drums === 'stems') added.push('X:drums');
   let bytes = out.bytes;
-  if (bgMedia) bytes = CHB.writeSng(CHB.setBackground(CHB.readSng(bytes), bgMedia));
-  return { bytes, added, extras };
+  const media = songBg[s.md5] || bgMedia;
+  if (media) bytes = CHB.writeSng(CHB.setBackground(CHB.readSng(bytes), media));
+  return { bytes, added, extras, hasLyrics: CHB.hasLyrics(CHB.readSng(bytes)) };
 }
 
 function extrasText(x) {
@@ -148,16 +162,66 @@ function extrasText(x) {
   return parts.join(' · ');
 }
 
-async function chooseBackground(file) {
+// md5 given: the image is only for that song; otherwise it's the one for all songs without their own
+async function chooseBackground(file, md5) {
   if (!file) return;
   if (!/\.(png|jpe?g|mp4|avi|webm|vp8|ogv|mpeg)$/i.test(file.name)) { FX.toast('Formato no válido. Usa JPG, PNG, MP4, WEBM, AVI, OGV o MPEG.'); return; }
-  bgMedia = { name: file.name, data: new Uint8Array(await file.arrayBuffer()) };
-  showBackground();
-  if (file.size > 200 * 1048576) FX.toast('Ese video pesa mucho: se copia dentro de cada canción que descargues.', 6000);
+  const media = { name: file.name, data: new Uint8Array(await file.arrayBuffer()) };
+  if (md5) { songBg[md5] = media; showSongBg(md5); } else { bgMedia = media; showBackground(); }
+  if (file.size > 200 * 1048576) FX.toast('Ese video pesa mucho: se copia dentro de la canción.', 6000);
 }
 function showBackground() {
-  $('#bgLabel').textContent = bgMedia ? bgMedia.name : 'ninguno (cada canción usa el suyo)';
+  $('#bgLabel').textContent = bgMedia ? bgMedia.name : 'ninguna (cada canción usa la suya)';
   $('#bgClear').classList.toggle('hidden', !bgMedia);
+}
+const bgButton = md5 => {
+  if (songBg[md5]) return `<span class="song-bg" data-bg="${esc(md5)}"><button class="bg-btn on" title="Cambiar la imagen de esta canción">🖼 ${esc(songBg[md5].name.slice(0, 18))}</button><button class="bg-x" title="Quitar la imagen">✕</button></span>`;
+  const info = infoLoaded[md5], has = info && (info.background || info.video);
+  return `<span class="song-bg" data-bg="${esc(md5)}"><button class="bg-btn" title="${has ? 'Esta canción ya trae fondo; la tuya lo reemplaza' : 'Ponerle una imagen o video de fondo a esta canción'}">🖼 ${has ? 'Cambiar imagen' : 'Agregar imagen'}</button></span>`;
+};
+function showSongBg(md5) {
+  for (const el of document.querySelectorAll(`[data-bg="${md5}"]`)) el.outerHTML = bgButton(md5);
+  for (const el of document.querySelectorAll(`[data-info="${md5}"]`)) fillInfo(el);
+}
+
+/* ---------- what each song brings: read when its row comes into view ---------- */
+const infoLoaded = {}, infoJobs = {}, infoWaiting = [];
+let infoActive = 0;
+function nextInfo() {
+  while (infoActive < 4 && infoWaiting.length) {
+    const md5 = infoWaiting.shift();
+    infoActive++;
+    CHB.peekSng(md5).then(i => { infoLoaded[md5] = i; }).catch(() => { infoLoaded[md5] = null; }).finally(() => {
+      infoActive--; showSongBg(md5); nextInfo();
+    });
+  }
+}
+function fillInfo(el) {
+  const md5 = el.dataset.info, i = infoLoaded[md5];
+  if (i === undefined) { el.innerHTML = '<span class="ic wait">Revisando qué trae…</span>'; return; }
+  if (i === null) { el.innerHTML = ''; return; }
+  const chip = (state, text, tip) => `<span class="ic ${state}" title="${esc(tip)}">${text}</span>`;
+  const lyr = $('#addLyrics').checked, drm = $('#addDrums').checked;
+  el.innerHTML = [
+    i.lyrics ? chip('si', '🎤 Con letra', 'Trae la letra') : chip(lyr ? 'add' : 'no', lyr ? '🎤 Sin letra: se buscará' : '🎤 Sin letra', lyr ? 'Al descargar se busca la letra' : 'No trae letra'),
+    songBg[md5] ? chip('add', '🖼 Tu imagen', 'Se guarda con tu imagen') : i.background ? chip('si', '🖼 Con fondo', 'Trae imagen de fondo') : chip('no', '🖼 Sin fondo', 'No trae imagen de fondo'),
+    i.video ? chip('si', '🎬 Con video', 'Trae video de fondo') : chip('no', '🎬 Sin video', 'No trae video de fondo'),
+    i.album ? chip('si', '💿 Con portada', 'Trae portada del álbum') : chip('no', '💿 Sin portada', 'No trae portada del álbum'),
+    i.drums ? chip('si', '🥁 Con batería', 'Trae batería') : chip(drm ? 'add' : 'no', drm ? '🥁 Sin batería: se creará' : '🥁 Sin batería', drm ? 'Al descargar se crea desde el audio' : 'No trae batería'),
+  ].join('');
+}
+const infoObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    infoObserver.unobserve(e.target);
+    const md5 = e.target.dataset.info;
+    if (!/^[0-9a-f]{32}$/.test(md5) || infoLoaded[md5] !== undefined || infoJobs[md5]) continue;
+    infoJobs[md5] = true; infoWaiting.push(md5); nextInfo();
+  }
+}, { rootMargin: '300px' }) : null;
+// rows just rendered: draw what is known and ask for the rest when they are seen
+function watchInfo(root) {
+  for (const el of root.querySelectorAll('[data-info]')) { fillInfo(el); if (infoObserver) infoObserver.observe(el); }
 }
 
 // the original file is cached, so the preview, the knobs and the download share one fetch
@@ -178,24 +242,28 @@ async function exportSong(s, getBytes = () => prepare(s)) {
     FX.toast('Preparando carpeta para Moonscraper…', 2000);
     const { bytes } = await getBytes();
     const { folder, bytes: zip } = CHB.sngToZip(bytes);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([zip], { type: 'application/zip' })); a.download = folder + '.zip'; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    FX.toast(`<b>✏️ Lista para editar</b><br><small>Descomprime <b>${esc(folder)}.zip</b> y abre <b>notes.chart</b> (o notes.mid) en Moonscraper. Si la pones en tu carpeta Songs, Clone Hero también la lee.</small>`, 9000);
+    const link = deliver(folder + '.zip', new Blob([zip], { type: 'application/zip' }));
+    FX.toast(`<b>✏️ Lista para editar</b>${link ? ' ' + saveLink(link) : ''}<br><small>Descomprime <b>${esc(folder)}.zip</b> y abre <b>notes.chart</b> (o notes.mid) en Moonscraper. Si la pones en tu carpeta Songs, Clone Hero también la lee.</small>`, link ? 60000 : 9000);
   } catch (e) { FX.toast('✖ ' + esc(e.message)); }
 }
 
 /* ---------- download queue ---------- */
 const queue = { jobs: [], done: 0, ok: 0, fail: 0, running: false, cur: 0 };
-// must be called straight from a click: picking the folder needs the user's gesture
+// Where the browser can write to a folder, it's asked for right away and then remembered.
+// Must run straight from a click: browsers only open the picker from a user gesture.
+async function folderReady() {
+  if (!canPickDir) return true;
+  if (dirHandle && await ensurePermission().catch(() => false)) return true;
+  if (await pickFolder()) return true;
+  FX.toast('Descarga cancelada: no elegiste una carpeta.', 3500);
+  return false;
+}
+
+// must be called straight from a click
 async function enqueue(songs) {
   const fresh = songs.filter(s => !queue.jobs.some(j => j.s.md5 === s.md5 && !j.finished));
   if (!fresh.length) return;
-  // browsers only allow one automatic download per click, so several songs need the Songs folder
-  if (fresh.length + queue.jobs.filter(j => !j.finished).length > 1 && !dirHandle && canPickDir) {
-    FX.toast('Elige tu carpeta <b>Songs</b> para guardar todas las canciones ahí directamente.', 5000);
-    if (!(await pickFolder())) { FX.toast('Sin carpeta no puedo guardar varias canciones a la vez. Elige tu carpeta Songs e inténtalo de nuevo.', 6000); return; }
-  }
+  if (!(await folderReady())) return;
   for (const s of fresh) queue.jobs.push({ s });
   for (const s of fresh) setStatus(s.md5, 'En cola…');
   for (const s of fresh) Analytics.track('download_song', { song: `${s.artist} - ${s.name}` });
@@ -210,37 +278,43 @@ function flushZip() {
   if (!zipBatch.length) return;
   zipPart++;
   const zip = CHB.makeZip(zipBatch.map(x => ({ name: x.name, data: x.bytes })));
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
-  a.download = `CH Buscador - canciones ${zipPart}.zip`; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
-  for (const x of zipBatch) setStatus(x.md5, `✔ en "CH Buscador - canciones ${zipPart}.zip" · ${x.gen}`, 'ok');
+  const zipName = `CH Buscador - canciones ${zipPart}.zip`;
+  const link = deliver(zipName, new Blob([zip], { type: 'application/zip' }));
+  for (const x of zipBatch) setStatus(x.md5, `${link ? 'Lista en' : '✔ en'} "${zipName}" · ${x.gen}`, 'ok', link);
+  if (link) FX.toast(`<b>${esc(zipName)}</b> está listo ${saveLink(link)}`, 120000);
   zipBatch = [];
 }
 
 async function runQueue() {
   if (queue.running) return;
-  queue.running = true; showQueue();
-  if (dirHandle) await ensurePermission();
+  queue.running = true;
+  clearTimeout(queue.timer);
+  // songs from an earlier run don't belong to this one
+  queue.jobs = queue.jobs.filter(j => !j.finished); queue.done = queue.ok = queue.fail = 0;
+  showQueue();
+  if (dirHandle) await ensurePermission().catch(() => false);
   const batch = !dirHandle && queue.jobs.length > 1;
+  const links = [];
   for (let j; (j = queue.jobs.find(x => !x.finished));) {
     const s = j.s; queue.cur = 0; showQueue(s);
     try {
       setStatus(s.md5, 'Descargando…');
-      const { bytes, added, extras } = await prepare(s, (a, b) => { queue.cur = b ? a / b : 0; showQueue(s); }, t => setStatus(s.md5, t));
+      const { bytes, added, extras, hasLyrics } = await prepare(s, (a, b) => { queue.cur = b ? a / b : 0; showQueue(s); }, t => setStatus(s.md5, t));
       const g = CHB.sngDifficulties(bytes).guitar || [];
       const ok = want().every(k => g.includes(k));
       const levels = added.filter(a => a !== 'X:drums');
-      const gen = [levels.length ? `se creó: ${summarize(levels)}` : 'ya traía los niveles', extrasText(extras)].filter(Boolean).join(' · ');
+      const gen = [levels.length ? `se creó: ${summarize(levels)}` : 'ya traía los niveles', extrasText(extras), extras.lyrics === 'added' || extras.lyrics === 'none' ? '' : (hasLyrics ? '🎤 con letra' : '🎤 sin letra')].filter(Boolean).join(' · ');
       if (batch) {
         zipBatch.push({ md5: s.md5, name: fileName(s), bytes, gen });
         setStatus(s.md5, 'Lista, esperando para empaquetar…');
         if (zipBatch.length >= ZIP_EVERY) flushZip();
       } else {
-        const where = await saveSong(fileName(s), bytes);
-        setStatus(s.md5, `✔ ${where} · ${gen}${ok ? '' : ' · ⚠ no se pudo completar la guitarra'}`, ok ? 'ok' : 'err');
+        const { where, link } = await saveSong(fileName(s), bytes);
+        setStatus(s.md5, `${link ? '' : '✔ '}${where} · ${gen}${ok ? '' : ' · ⚠ no se pudo completar la guitarra'}`, ok ? 'ok' : 'err', link);
+        if (link) { links.push({ s, link }); pendingSaves[link.url] = s; }
       }
-      Community.recordDownload(s);
+      // a song waiting for its Guardar click counts when it's clicked
+      if (!pendingSaves[statusOf[s.md5]?.link?.url]) Community.recordDownload(s);
       queue.ok++;
     } catch (e) { setStatus(s.md5, '✖ ' + e.message, 'err'); queue.fail++; }
     j.finished = true; queue.done++;
@@ -251,10 +325,30 @@ async function runQueue() {
   const how = batch
     ? 'Descomprime los .zip dentro de tu carpeta Songs. Si el navegador pregunta, permite descargar varios archivos.<br>Luego en Clone Hero: Settings → General → Scan Songs'
     : 'En Clone Hero: Settings → General → Scan Songs';
-  if (n) { FX.sparks(); FX.strum(); FX.toast(`<b>¡Rock on! 🤘</b> ${n} ${n === 1 ? 'canción lista' : 'canciones listas'}${f ? ` · ${f} con error` : ''}<br><small>${how}</small>`, batch ? 10000 : 6000); }
+  if (links.length) {
+    // nothing is saved yet: say so, with the button at hand (also over the preview)
+    FX.toast(links.map(x => `<b>${esc(x.s.name)}</b> está lista ${saveLink(x.link)}`).join('<br>'), 120000);
+  } else if (n) { FX.sparks(); FX.strum(); FX.toast(`<b>¡Rock on! 🤘</b> ${n} ${n === 1 ? 'canción lista' : 'canciones listas'}${f ? ` · ${f} con error` : ''}<br><small>${how}</small>`, batch ? 10000 : 6000); }
   else if (f) FX.toast(`No se pudo descargar ${f === 1 ? 'la canción' : f + ' canciones'}.`);
-  setTimeout(() => { if (!queue.running) { queue.jobs = []; queue.done = queue.ok = queue.fail = 0; showQueue(); } }, 4000);
+  queue.timer = setTimeout(() => { if (!queue.running) { queue.jobs = []; queue.done = queue.ok = queue.fail = 0; showQueue(); } }, 4000);
 }
+
+// the Guardar link is what really saves the file: only now it counts, and the status can say so
+const pendingSaves = {};
+document.addEventListener('click', e => {
+  const a = e.target.closest('.save-link'); if (!a) return;
+  const url = a.getAttribute('href'), s = pendingSaves[url];
+  // the same file can have its button in the list and in a notice
+  for (const same of document.querySelectorAll('.save-link')) {
+    if (same.getAttribute('href') !== url) continue;
+    same.textContent = '✔ Guardado'; same.classList.add('done');
+    const toast = same.closest('.toast');
+    // once everything in the notice is saved, it fades away
+    if (toast && !toast.querySelector('.save-link:not(.done)')) FX.dismiss(toast, 900);
+  }
+  if (s) { Community.recordDownload(s); delete pendingSaves[url]; setStatus(s.md5, '✔ enviada a tu carpeta de Descargas', 'ok'); FX.sparks(50); }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+});
 function showQueue(cur) {
   const box = $('#queue'), total = queue.jobs.length;
   box.classList.toggle('hidden', !total);
@@ -297,11 +391,11 @@ function songCard(s) {
     <button class="art play" ${art} title="Vista previa"><span>▶</span></button>
     <div class="info"><div class="title">${esc(s.name)}</div>
       <div class="meta"><span class="artist">${esc(s.artist)}</span>${meta ? ' · ' + meta : ''}</div>
-      <div class="badges">${flames(s)}${badges}${s.notesData?.hasLyrics ? '<span class="inst" title="Trae la letra">🎤 Letra</span>' : ''}${s.hasVideoBackground ? '<span class="inst" title="Trae video de fondo">🎬 Video</span>' : ''}</div></div>
+      <div class="badges">${flames(s)}${badges}</div><div class="info" data-info="${s.md5}"></div></div>
     <div class="actions">
       <label class="chk"><input type="checkbox" class="pick" ${state.sel.has(s.md5) ? 'checked' : ''}> elegir</label>
-      <div class="row" style="gap:6px"><button class="pv-btn" title="Vista previa">▶ Ver</button><button class="dl">Descargar</button></div>
-      <div class="status ${st.cls || ''}" id="st-${s.md5}">${esc(st.text || '')}</div>
+      <div class="row" style="gap:6px">${bgButton(s.md5)}<button class="pv-btn" title="Vista previa">▶ Ver</button><button class="dl">Descargar</button></div>
+      <div class="status ${st.cls || ''}" id="st-${s.md5}">${statusHtml(s.md5)}</div>
     </div></div>`;
 }
 
@@ -309,6 +403,7 @@ function render() {
   const box = $('#results');
   if (!state.items.length) box.innerHTML = state.args ? '<div class="empty">No encontré canciones que cumplan con lo que pides.</div>' : '';
   else box.innerHTML = state.items.map(songCard).join('');
+  watchInfo(box);
   $('#moreBtn').classList.toggle('hidden', !state.args || state.done);
   $('#shareSearch').classList.toggle('hidden', !state.args);
   $('#resultsHead').classList.toggle('hidden', !state.items.length);
@@ -317,9 +412,13 @@ function render() {
   $('#selCount').textContent = `${state.sel.size} seleccionada(s)`;
 }
 
-function setStatus(md5, text, cls) {
-  statusOf[md5] = { text, cls };
-  for (const el of document.querySelectorAll(`[id="st-${md5}"]`)) { el.textContent = text; el.className = 'status ' + (cls || ''); }
+function statusHtml(md5) {
+  const st = statusOf[md5] || {};
+  return esc(st.text || '') + (st.link ? ' ' + saveLink(st.link) : '');
+}
+function setStatus(md5, text, cls, link) {
+  statusOf[md5] = { text, cls, link };
+  for (const el of document.querySelectorAll(`[id="st-${md5}"]`)) { el.innerHTML = statusHtml(md5); el.className = 'status ' + (cls || ''); }
 }
 
 async function doSearch(args, limit, push = true) {
@@ -347,7 +446,7 @@ function openPreview(s) {
     regenerate: k => { setKnobs(k); return prepare(s); },
     knobs,
     extra: (kind, onStep) => { (askedFor[s.md5] = askedFor[s.md5] || {})[kind] = true; return prepare(s, undefined, onStep); },
-    background: async file => { await chooseBackground(file); return prepare(s); },
+    background: async file => { await chooseBackground(file, s.md5); return prepare(s); },
     rating: Community.canRate(s.md5) ? { summary: () => Community.summary(s.md5), mine: level => Community.myVote(s.md5, level), rate: (level, stars) => Community.rate(s.md5, level, stars) } : null,
     onDownload: () => enqueue([s]),
     onExport: () => exportSong(s),
@@ -355,23 +454,35 @@ function openPreview(s) {
   });
 }
 
-/* ---------- community: counter and weekly top ---------- */
-let topSongs = [];
+/* ---------- community: counter and most downloaded (this week / all time) ---------- */
+let topSongs = [], topPeriod = 'week';
 async function loadCommunity() {
-  const [n, list] = await Promise.all([Community.total(), Community.top(10)]);
+  const n = await Community.total();
   if (n > 0) {
     $('#counter').innerHTML = `🎸 <b>${Number(n).toLocaleString('es')}</b> ${n === 1 ? 'canción descargada' : 'canciones descargadas'}`;
     $('#counter').classList.remove('hidden');
   }
+}
+async function loadTop(period = topPeriod) {
+  topPeriod = period;
+  $('#topPeriodWeek').classList.toggle('on', period === 'week');
+  $('#topPeriodAll').classList.toggle('on', period === 'all');
+  $('#topList').innerHTML = '<div class="empty loading">Cargando…</div>';
+  const list = await Community.top(25, period);
+  if (period !== topPeriod) return;   // the other tab was chosen meanwhile
   topSongs = (list || []).map(x => ({ md5: x.md5, artist: x.artist, name: x.name, downloads: x.downloads }));
-  $('#topWeek').classList.toggle('hidden', !topSongs.length);
+  if (!topSongs.length) {
+    $('#topList').innerHTML = `<div class="empty">${period === 'week' ? 'Todavía no hay descargas esta semana. ¡Sé la primera persona!' : 'Todavía no hay datos del histórico.'}</div>`;
+    return;
+  }
   $('#topList').innerHTML = topSongs.map((s, i) => `
     <div class="prow" data-md5="${esc(s.md5)}">
       <span class="pn">${i + 1}</span>
-      <span class="pt"><b>${esc(s.name)}</b><small>${esc(s.artist)} · ${Number(s.downloads).toLocaleString('es')} ${s.downloads === 1 ? 'descarga' : 'descargas'}</small></span>
-      <span class="row" style="gap:6px"><button class="pv-btn" title="Vista previa">▶</button><button class="dl">Descargar</button></span>
-      <div class="status ${statusOf[s.md5]?.cls || ''}" id="st-${esc(s.md5)}">${esc(statusOf[s.md5]?.text || '')}</div>
+      <span class="pt"><b>${esc(s.name)}</b><small>${esc(s.artist)} · ${Number(s.downloads).toLocaleString('es')} ${s.downloads === 1 ? 'descarga' : 'descargas'}</small><span class="info" data-info="${esc(s.md5)}"></span></span>
+      <span class="row" style="gap:6px">${bgButton(s.md5)}<button class="pv-btn" title="Vista previa">▶</button><button class="dl">Descargar</button></span>
+      <div class="status ${statusOf[s.md5]?.cls || ''}" id="st-${esc(s.md5)}">${statusHtml(s.md5)}</div>
     </div>`).join('');
+  watchInfo($('#topList'));
 }
 
 /* ---------- packs ---------- */
@@ -402,10 +513,11 @@ function openPack(id, push = true) {
   $('#packList').innerHTML = songs.map((s, i) => `
     <div class="prow" data-md5="${s.md5}">
       <span class="pn">${i + 1}</span>
-      <span class="pt"><b>${esc(s.name)}</b><small>${esc(s.artist)}</small></span>
-      <button class="pv-btn" title="Vista previa">▶</button>
-      <div class="status ${statusOf[s.md5]?.cls || ''}" id="st-${s.md5}">${esc(statusOf[s.md5]?.text || '')}</div>
+      <span class="pt"><b>${esc(s.name)}</b><small>${esc(s.artist)}</small><span class="info" data-info="${s.md5}"></span></span>
+      <span class="row" style="gap:6px">${bgButton(s.md5)}<button class="pv-btn" title="Vista previa">▶</button></span>
+      <div class="status ${statusOf[s.md5]?.cls || ''}" id="st-${s.md5}">${statusHtml(s.md5)}</div>
     </div>`).join('');
+  watchInfo($('#packList'));
   $('#packDl').onclick = () => { Analytics.track('pack_download', { pack: id }); enqueue(songs); };
   $('#packShare').onclick = () => share({ pack: id }, `Pack ${p.title} para Clone Hero`);
 }
@@ -511,8 +623,8 @@ async function readLite(file) {
   const chart = index.find(f => /\.(chart|midi?)$/i.test(f.name));
   if (!chart) return { meta, diffs: {} };
   const raw = new Uint8Array(await file.slice(chart.off, chart.off + chart.len).arrayBuffer());
-  const diffs = CHB.sngDifficulties({ meta: [], files: [{ name: chart.name, data: CHB.xorData(raw, mask) }] });
-  return { meta, diffs };
+  const mini = { meta: [], files: [{ name: chart.name, data: CHB.xorData(raw, mask) }] };
+  return { meta, diffs: CHB.sngDifficulties(mini), lyrics: CHB.hasLyrics(mini) };
 }
 async function libraryStats(files) {
   if (!files) {
@@ -526,8 +638,8 @@ async function libraryStats(files) {
   for await (const f of libraryEntries(files)) {
     try {
       const file = await f.getFile(); bytes += file.size;
-      const { meta, diffs } = await readLite(file);
-      rows.push({ path: f.path, artist: meta.artist || '¿?', name: meta.name || f.name, genre: meta.genre || 'Sin género', g: diffs.guitar || [], insts: Object.keys(diffs) });
+      const { meta, diffs, lyrics } = await readLite(file);
+      rows.push({ path: f.path, artist: meta.artist || '¿?', name: meta.name || f.name, genre: meta.genre || 'Sin género', g: diffs.guitar || [], insts: Object.keys(diffs), lyrics: !!lyrics });
     } catch { rows.push({ path: f.path, artist: '¿?', name: f.name, genre: 'Sin género', g: [], insts: [], bad: true }); }
     if (++n % 20 === 0) out.innerHTML = `<div class="empty loading">Revisando tu biblioteca… ${n} canciones</div>`;
   }
@@ -546,6 +658,8 @@ async function libraryStats(files) {
       <div class="tile"><b>${rows.length}</b><span>canciones</span></div>
       <div class="tile"><b>${pct}%</b><span>tienen ${esc(lv)}</span></div>
       <div class="tile"><b>${fixable.length}</b><span>se pueden arreglar</span></div>
+      <div class="tile"><b>${rows.filter(r => r.lyrics).length}</b><span>🎤 tienen letra</span></div>
+      <div class="tile"><b>${rows.filter(r => r.insts.includes('drums')).length}</b><span>🥁 tienen batería</span></div>
       <div class="tile"><b>${(bytes / 1073741824).toFixed(2)} GB</b><span>en disco</span></div>
     </div>
     <div class="meter"><i style="width:${pct}%"></i></div>
@@ -604,16 +718,17 @@ function previewCreated() {
     regenerate: k => { setKnobs(k); return createdLevels(); },
     knobs,
     extra: (kind, onStep) => { (askedFor[created.song.md5] = askedFor[created.song.md5] || {})[kind] = true; return createdLevels(onStep); },
-    background: async file => { await chooseBackground(file); return createdLevels(); },
+    background: async file => { await chooseBackground(file, created.song.md5); return createdLevels(); },
     onDownload: saveCreated,
     onExport: () => exportSong(created.song, () => createdLevels()),
     preferDiff: want().includes('M') ? 'M' : want()[0],
   });
 }
 async function saveCreated() {
-  if (!created) return;
+  if (!created || !(await folderReady())) return;
   try {
-    const where = await saveSong(fileName(created.song), (await createdLevels()).bytes);
+    const { where, link } = await saveSong(fileName(created.song), (await createdLevels()).bytes);
+    if (link) { FX.toast(`<b>${esc(created.song.name)}</b> está lista ${saveLink(link)}`, 120000); return; }
     FX.sparks(); FX.strum();
     FX.toast(`<b>¡Rock on! 🤘</b> ${esc(created.song.name)} ${esc(where)}<br><small>En Clone Hero: Settings → General → Scan Songs</small>`, 6000);
   } catch (e) { FX.toast('✖ ' + esc(e.message)); }
@@ -621,7 +736,7 @@ async function saveCreated() {
 
 /* ---------- tabs ---------- */
 function tab(name) {
-  for (const t of ['search', 'packs', 'lib', 'audio']) {
+  for (const t of ['search', 'top', 'packs', 'lib', 'audio']) {
     $('#view-' + t).classList.toggle('hidden', t !== name);
     $('#tab-' + t).classList.toggle('on', t === name);
   }
@@ -639,7 +754,16 @@ $('#chips').onclick = e => { const q = e.target.dataset.q; if (!q) return; $('#q
 $('#moreBtn').onclick = () => doSearch(state.args, state.limit + 20, false);
 $('#filter').onchange = () => { if (state.args) doSearch({ ...state.args }, state.limit, false); };
 $('#shareSearch').onclick = () => { const a = state.args; const [por, q] = Object.entries(a)[0]; share({ q, por }, `Canciones de ${q} para Clone Hero`); };
-for (const id of ['#needE', '#needM', '#needH', '#allInst', '#addLyrics', '#addDrums']) $(id).onchange = () => { render(); savePrefs(); };
+for (const id of ['#needE', '#needM', '#needH', '#allInst', '#addLyrics', '#addDrums']) $(id).onchange = () => { render(); for (const el of document.querySelectorAll('[data-info]')) fillInfo(el); savePrefs(); };
+// the image button of any song row shares one file picker
+let bgTarget = null;
+document.addEventListener('click', e => {
+  const box = e.target.closest('.song-bg'); if (!box) return;
+  const md5 = box.dataset.bg;
+  if (e.target.closest('.bg-x')) { delete songBg[md5]; showSongBg(md5); return; }
+  if (e.target.closest('.bg-btn')) { bgTarget = md5; $('#songBgFile').click(); }
+});
+$('#songBgFile').onchange = e => { chooseBackground(e.target.files[0], bgTarget); e.target.value = ''; };
 $('#bgFile').onchange = e => { chooseBackground(e.target.files[0]); e.target.value = ''; };
 $('#bgClear').onclick = () => { bgMedia = null; showBackground(); };
 $('#libInput').onchange = e => {
@@ -679,6 +803,9 @@ $('#tab-search').onclick = () => { tab('search'); };
 $('#tab-packs').onclick = () => { tab('packs'); };
 $('#tab-lib').onclick = () => tab('lib');
 $('#tab-audio').onclick = () => tab('audio');
+$('#tab-top').onclick = () => { tab('top'); loadTop(); };
+$('#topPeriodWeek').onclick = () => loadTop('week');
+$('#topPeriodAll').onclick = () => loadTop('all');
 $('#audioFile').onchange = e => pickAudio(e.target.files[0]);
 $('#drop').addEventListener('dragover', e => { e.preventDefault(); $('#drop').classList.add('over'); });
 $('#drop').addEventListener('dragleave', () => $('#drop').classList.remove('over'));

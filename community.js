@@ -40,7 +40,7 @@ const Community = (() => {
   }
 
   const total = () => rpc('downloads_total').catch(() => null);
-  const top = (limit = 10) => rpc('top_downloads_week', { p_limit: limit }).catch(() => []);
+  const top = (limit = 10, period = 'week') => rpc(period === 'all' ? 'top_downloads_all' : 'top_downloads_week', { p_limit: limit }).catch(() => []);
 
   const canRate = md5 => validId(md5);
   const summary = md5 => (canRate(md5) ? rpc('rating_summary', { p_md5: md5 }).catch(() => []) : Promise.resolve([]));

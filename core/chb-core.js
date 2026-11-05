@@ -393,6 +393,27 @@
     return { mask, meta, index };
   }
 
+  /* What a song on Encore brings, reading only its header and chart (about 150 KB instead of the whole file). */
+  async function peekSng(md5) {
+    const part = async (a, b) => {
+      const r = await fetch(FILES + md5 + '.sng', { headers: { Range: `bytes=${a}-${b}` } });
+      if (!r.ok) throw new Error('No se pudo leer la canción');
+      return { bytes: new Uint8Array(await r.arrayBuffer()), whole: r.status === 200 };
+    };
+    const first = await part(0, 131071);
+    const { mask, index } = readSngIndex(first.bytes);
+    const has = re => index.some(f => re.test(f.name));
+    const chart = index.find(f => /\.(chart|midi?)$/i.test(f.name));
+    let diffs = {}, lyrics = false;
+    if (chart) {
+      const end = chart.off + chart.len;
+      const raw = first.whole || end <= first.bytes.length ? first.bytes.subarray(chart.off, end) : (await part(chart.off, end - 1)).bytes;
+      const mini = { meta: [], files: [{ name: chart.name, data: xorData(raw, mask) }] };
+      diffs = sngDifficulties(mini); lyrics = hasLyrics(mini);
+    }
+    return { background: has(/^background\./i), album: has(/^album\./i), video: has(/^video\./i), lyrics, drums: !!diffs.drums, diffs };
+  }
+
   /* ---------- notes on a timeline (for the preview player) ---------- */
   // tempo: [{ tick, uspq }] sorted; returns tick -> seconds
   function tempoMap(tempo, res) {
@@ -860,7 +881,7 @@
   const api = {
     readSng, writeSng, readSngIndex, xorData, parseMidi, writeMidi, reduceChartText, reduceMidi, processSng, sngDifficulties, songTimeline,
     levelsFor, DEFAULT_KNOBS, makeZip, sngToZip,
-    songClock, hasLyrics, parseLrc, lrcToPhrases, findLyrics, addLyrics, hasDrums, addDrumTrack, setBackground,
+    peekSng, songClock, hasLyrics, parseLrc, lrcToPhrases, findLyrics, addLyrics, hasDrums, addDrumTrack, setBackground,
     encoreSearch, fetchSng, findSongs, pickBest, nativeDiffs, hasNative, canFill, fileName, summarize,
     INST_LABEL, LEVEL_LABEL, FILES,
   };

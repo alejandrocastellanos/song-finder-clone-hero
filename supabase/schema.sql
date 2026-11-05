@@ -47,6 +47,16 @@ language sql stable security definer set search_path = '' as $$
   limit least(greatest(p_limit, 1), 50);
 $$;
 
+create or replace function public.top_downloads_all(p_limit int default 10)
+returns table (md5 text, artist text, name text, downloads bigint)
+language sql stable security definer set search_path = '' as $$
+  select md5, max(artist), max(name), sum(downloads)::bigint
+  from public.download_daily
+  group by md5
+  order by 4 desc
+  limit least(greatest(p_limit, 1), 50);
+$$;
+
 create or replace function public.rate_level(p_md5 text, p_level text, p_stars int, p_voter uuid)
 returns void language sql security definer set search_path = '' as $$
   insert into public.ratings (md5, level, voter, stars)
@@ -65,6 +75,8 @@ $$;
 revoke all on function public.record_download(text, text, text) from public;
 revoke all on function public.downloads_total() from public;
 revoke all on function public.top_downloads_week(int) from public;
+revoke all on function public.top_downloads_all(int) from public;
+grant execute on function public.top_downloads_all(int) to anon, authenticated;
 revoke all on function public.rate_level(text, text, int, uuid) from public;
 revoke all on function public.rating_summary(text) from public;
 grant execute on function public.record_download(text, text, text) to anon, authenticated;

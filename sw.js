@@ -1,5 +1,5 @@
 /* Caches the app itself so it opens offline and installs as an app. Songs and searches always go to the network. */
-const CACHE = 'chb-v4';
+const CACHE = 'chb-v6';
 const SHELL = ['./', 'index.html', 'app.js', 'analytics.js', 'community.js', 'core/chb-core.js', 'packs.js', 'fx.js', 'preview.js', 'autochart.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
