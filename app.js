@@ -33,13 +33,21 @@ async function ensurePermission() {
   return (await dirHandle.requestPermission(o)) === 'granted';
 }
 function showFolder() {
-  $('#folderLabel').innerHTML = dirHandle
-    ? `Carpeta de destino: <b>${esc(dirHandle.name)}</b>`
-    : canPickDir ? 'Carpeta de destino: <b>ninguna</b> (las canciones se bajarán como descargas normales)'
-                 : 'Tu navegador no permite elegir carpeta: las canciones se bajarán como descargas normales. Usa Chrome o Edge para guardarlas directo en Songs.';
+  $('#pickFolder').classList.toggle('hidden', !canPickDir);
+  if (canPickDir) {
+    $('#folderLabel').innerHTML = dirHandle
+      ? `Carpeta de destino: <b>${esc(dirHandle.name)}</b>`
+      : 'Carpeta de destino: <b>ninguna</b> (una canción se baja a Descargas; para varias te pediré la carpeta)';
+    return;
+  }
+  // Firefox and Safari have no folder picker; Brave ships with it turned off
+  $('#folderLabel').innerHTML = '<b>Guardado:</b> una canción baja a Descargas y varias bajan en archivos .zip; luego las pasas a tu carpeta Songs. '
+    + (navigator.brave
+      ? '<span class="sub">En Brave puedes guardar directo en Songs: abre <b>brave://flags/#file-system-access-api</b>, actívalo y reinicia el navegador.</span>'
+      : '<span class="sub">Para guardarlas directo en Songs usa Chrome, Edge u Opera en computadora.</span>');
 }
 async function pickFolder() {
-  if (!canPickDir) { alert('Tu navegador no permite elegir carpetas. Usa Chrome o Edge.'); return false; }
+  if (!canPickDir) return false;
   try { dirHandle = await window.showDirectoryPicker({ id: 'ch-songs', mode: 'readwrite' }); await kv('dir', dirHandle); showFolder(); return true; }
   catch { return false; }
 }
@@ -69,7 +77,88 @@ function showKnobs() {
     + (custom ? ' <button class="ghost chip" id="knobsReset">Restablecer</button>' : ' <span class="sub">(ajústalos desde ▶ Ver)</span>');
   const r = $('#knobsReset'); if (r) r.onclick = () => setKnobs(CHB.DEFAULT_KNOBS);
 }
-function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knobs }); }
+function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knobs, lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked }); }
+
+/* ---------- extras: lyrics, drums and background ---------- */
+const askedFor = {};        // md5 -> { lyrics, drums } requested from the preview for one song
+const enrichedCache = new Map();
+let bgMedia = null;         // { name, data } chosen by the user, applied to what gets saved
+
+function extrasFlags(s) {
+  const a = askedFor[s.md5] || {};
+  return { lyrics: $('#addLyrics').checked || !!a.lyrics, drums: $('#addDrums').checked || !!a.drums };
+}
+
+// returns { bytes, extras: { lyrics: 'added'|'have'|'none', drums: 'added'|'stems'|'have'|'none' } }
+async function enrichBytes(s, raw, flags, onStep = () => { }) {
+  const extras = {};
+  if (!flags.lyrics && !flags.drums) return { bytes: raw, extras };
+  const sng = CHB.readSng(raw), meta = Object.fromEntries(sng.meta);
+  let changed = false;
+  if (flags.lyrics) {
+    if (CHB.hasLyrics(sng)) extras.lyrics = 'have';
+    else {
+      onStep('Buscando la letra…');
+      const duration = (+meta.song_length || s.song_length || 0) / 1000;
+      const lines = await CHB.findLyrics({ artist: meta.artist || s.artist, name: meta.name || s.name, duration }).catch(() => null);
+      const phrases = lines ? CHB.lrcToPhrases(lines, duration) : [];
+      if (phrases.length && CHB.addLyrics(sng, phrases)) { extras.lyrics = 'added'; changed = true; } else extras.lyrics = 'none';
+    }
+  }
+  if (flags.drums) {
+    if (CHB.hasDrums(sng)) extras.drums = 'have';
+    else {
+      onStep('Creando la batería…');
+      try { const r = await AutoChart.addDrums(sng); extras.drums = r.fromStems ? 'stems' : 'added'; changed = true; }
+      catch { extras.drums = 'none'; }
+    }
+  }
+  return { bytes: changed ? CHB.writeSng(sng) : raw, extras };
+}
+
+function enrichCached(s, raw, onStep) {
+  const flags = extrasFlags(s), key = `${s.md5}|${+flags.lyrics}|${+flags.drums}`;
+  if (!enrichedCache.has(key)) {
+    const job = enrichBytes(s, raw, flags, onStep);
+    job.catch(() => enrichedCache.delete(key));
+    enrichedCache.set(key, job);
+    while (enrichedCache.size > 3) enrichedCache.delete(enrichedCache.keys().next().value);
+  }
+  return enrichedCache.get(key);
+}
+
+async function prepareFrom(s, rawPromise, onStep) {
+  const raw = await rawPromise;
+  const { bytes: rich, extras } = await enrichCached(s, raw, onStep);
+  const out = processSng(rich, want(), $('#allInst').checked, knobs);
+  const added = [...out.added];
+  if (extras.drums === 'added' || extras.drums === 'stems') added.push('X:drums');
+  let bytes = out.bytes;
+  if (bgMedia) bytes = CHB.writeSng(CHB.setBackground(CHB.readSng(bytes), bgMedia));
+  return { bytes, added, extras };
+}
+
+function extrasText(x) {
+  const parts = [];
+  if (x.lyrics === 'added') parts.push('letra agregada');
+  if (x.lyrics === 'none') parts.push('no encontré la letra con tiempos');
+  if (x.drums === 'added') parts.push('batería creada desde el audio');
+  if (x.drums === 'stems') parts.push('batería creada desde su pista');
+  if (x.drums === 'none') parts.push('no se pudo crear la batería');
+  return parts.join(' · ');
+}
+
+async function chooseBackground(file) {
+  if (!file) return;
+  if (!/\.(png|jpe?g|mp4|avi|webm|vp8|ogv|mpeg)$/i.test(file.name)) { FX.toast('Formato no válido. Usa JPG, PNG, MP4, WEBM, AVI, OGV o MPEG.'); return; }
+  bgMedia = { name: file.name, data: new Uint8Array(await file.arrayBuffer()) };
+  showBackground();
+  if (file.size > 200 * 1048576) FX.toast('Ese video pesa mucho: se copia dentro de cada canción que descargues.', 6000);
+}
+function showBackground() {
+  $('#bgLabel').textContent = bgMedia ? bgMedia.name : 'ninguno (cada canción usa el suyo)';
+  $('#bgClear').classList.toggle('hidden', !bgMedia);
+}
 
 // the original file is cached, so the preview, the knobs and the download share one fetch
 const raws = new Map();
@@ -82,7 +171,7 @@ function getRaw(s, onProgress) {
   }
   return raws.get(s.md5);
 }
-const prepare = (s, onProgress) => getRaw(s, onProgress).then(buf => processSng(buf, want(), $('#allInst').checked, knobs));
+const prepare = (s, onProgress, onStep) => prepareFrom(s, getRaw(s, onProgress), onStep);
 
 async function exportSong(s, getBytes = () => prepare(s)) {
   try {
@@ -98,35 +187,71 @@ async function exportSong(s, getBytes = () => prepare(s)) {
 
 /* ---------- download queue ---------- */
 const queue = { jobs: [], done: 0, ok: 0, fail: 0, running: false, cur: 0 };
-function enqueue(songs) {
+// must be called straight from a click: picking the folder needs the user's gesture
+async function enqueue(songs) {
   const fresh = songs.filter(s => !queue.jobs.some(j => j.s.md5 === s.md5 && !j.finished));
-  for (const s of fresh) queue.jobs.push({ s });
   if (!fresh.length) return;
+  // browsers only allow one automatic download per click, so several songs need the Songs folder
+  if (fresh.length + queue.jobs.filter(j => !j.finished).length > 1 && !dirHandle && canPickDir) {
+    FX.toast('Elige tu carpeta <b>Songs</b> para guardar todas las canciones ahí directamente.', 5000);
+    if (!(await pickFolder())) { FX.toast('Sin carpeta no puedo guardar varias canciones a la vez. Elige tu carpeta Songs e inténtalo de nuevo.', 6000); return; }
+  }
+  for (const s of fresh) queue.jobs.push({ s });
   for (const s of fresh) setStatus(s.md5, 'En cola…');
+  for (const s of fresh) Analytics.track('download_song', { song: `${s.artist} - ${s.name}` });
   FX.pick();
   runQueue();
 }
+
+// without a folder (Firefox, Safari) several songs go out as a few .zip files instead of one download each
+const ZIP_EVERY = 10;
+let zipBatch = [], zipPart = 0;
+function flushZip() {
+  if (!zipBatch.length) return;
+  zipPart++;
+  const zip = CHB.makeZip(zipBatch.map(x => ({ name: x.name, data: x.bytes })));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
+  a.download = `CH Buscador - canciones ${zipPart}.zip`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  for (const x of zipBatch) setStatus(x.md5, `✔ en "CH Buscador - canciones ${zipPart}.zip" · ${x.gen}`, 'ok');
+  zipBatch = [];
+}
+
 async function runQueue() {
   if (queue.running) return;
   queue.running = true; showQueue();
   if (dirHandle) await ensurePermission();
+  const batch = !dirHandle && queue.jobs.length > 1;
   for (let j; (j = queue.jobs.find(x => !x.finished));) {
     const s = j.s; queue.cur = 0; showQueue(s);
     try {
       setStatus(s.md5, 'Descargando…');
-      const { bytes, added } = await prepare(s, (a, b) => { queue.cur = b ? a / b : 0; showQueue(s); });
-      const where = await saveSong(fileName(s), bytes);
+      const { bytes, added, extras } = await prepare(s, (a, b) => { queue.cur = b ? a / b : 0; showQueue(s); }, t => setStatus(s.md5, t));
       const g = CHB.sngDifficulties(bytes).guitar || [];
       const ok = want().every(k => g.includes(k));
-      const gen = added.length ? `se creó: ${summarize(added)}` : 'ya traía lo necesario';
-      setStatus(s.md5, `✔ ${where} · ${gen}${ok ? '' : ' · ⚠ no se pudo completar la guitarra'}`, ok ? 'ok' : 'err');
+      const levels = added.filter(a => a !== 'X:drums');
+      const gen = [levels.length ? `se creó: ${summarize(levels)}` : 'ya traía los niveles', extrasText(extras)].filter(Boolean).join(' · ');
+      if (batch) {
+        zipBatch.push({ md5: s.md5, name: fileName(s), bytes, gen });
+        setStatus(s.md5, 'Lista, esperando para empaquetar…');
+        if (zipBatch.length >= ZIP_EVERY) flushZip();
+      } else {
+        const where = await saveSong(fileName(s), bytes);
+        setStatus(s.md5, `✔ ${where} · ${gen}${ok ? '' : ' · ⚠ no se pudo completar la guitarra'}`, ok ? 'ok' : 'err');
+      }
+      Community.recordDownload(s);
       queue.ok++;
     } catch (e) { setStatus(s.md5, '✖ ' + e.message, 'err'); queue.fail++; }
     j.finished = true; queue.done++;
   }
+  flushZip(); zipPart = 0;
   queue.running = false; showQueue();
   const n = queue.ok, f = queue.fail;
-  if (n) { FX.sparks(); FX.strum(); FX.toast(`<b>¡Rock on! 🤘</b> ${n} ${n === 1 ? 'canción lista' : 'canciones listas'}${f ? ` · ${f} con error` : ''}<br><small>En Clone Hero: Settings → General → Scan Songs</small>`, 6000); }
+  const how = batch
+    ? 'Descomprime los .zip dentro de tu carpeta Songs. Si el navegador pregunta, permite descargar varios archivos.<br>Luego en Clone Hero: Settings → General → Scan Songs'
+    : 'En Clone Hero: Settings → General → Scan Songs';
+  if (n) { FX.sparks(); FX.strum(); FX.toast(`<b>¡Rock on! 🤘</b> ${n} ${n === 1 ? 'canción lista' : 'canciones listas'}${f ? ` · ${f} con error` : ''}<br><small>${how}</small>`, batch ? 10000 : 6000); }
   else if (f) FX.toast(`No se pudo descargar ${f === 1 ? 'la canción' : f + ' canciones'}.`);
   setTimeout(() => { if (!queue.running) { queue.jobs = []; queue.done = queue.ok = queue.fail = 0; showQueue(); } }, 4000);
 }
@@ -172,7 +297,7 @@ function songCard(s) {
     <button class="art play" ${art} title="Vista previa"><span>▶</span></button>
     <div class="info"><div class="title">${esc(s.name)}</div>
       <div class="meta"><span class="artist">${esc(s.artist)}</span>${meta ? ' · ' + meta : ''}</div>
-      <div class="badges">${flames(s)}${badges}</div></div>
+      <div class="badges">${flames(s)}${badges}${s.notesData?.hasLyrics ? '<span class="inst" title="Trae la letra">🎤 Letra</span>' : ''}${s.hasVideoBackground ? '<span class="inst" title="Trae video de fondo">🎬 Video</span>' : ''}</div></div>
     <div class="actions">
       <label class="chk"><input type="checkbox" class="pick" ${state.sel.has(s.md5) ? 'checked' : ''}> elegir</label>
       <div class="row" style="gap:6px"><button class="pv-btn" title="Vista previa">▶ Ver</button><button class="dl">Descargar</button></div>
@@ -204,7 +329,7 @@ async function doSearch(args, limit, push = true) {
   else $('#results').innerHTML = '<div class="empty loading">Buscando…</div>';
   const text = args.query || args.artist || args.genre;
   rememberSearch(text);
-  if (push) setUrl({ q: text, por: Object.keys(args)[0] });
+  if (push) { setUrl({ q: text, por: Object.keys(args)[0] }); Analytics.track('search', { search_term: text }); }
   try {
     const items = await findSongs({ ...args, want: want(), limit, onlyNative: $('#filter').value === 'native' });
     state = { args, limit, items, sel: more ? state.sel : new Set(), done: items.length < limit };
@@ -215,33 +340,60 @@ async function doSearch(args, limit, push = true) {
 
 function openPreview(s) {
   setBackdrop(s);
+  Analytics.track('preview', { song: `${s.artist} - ${s.name}` });
   Preview.open({
     song: s,
     fetchBytes: onProgress => prepare(s, onProgress),
     regenerate: k => { setKnobs(k); return prepare(s); },
     knobs,
+    extra: (kind, onStep) => { (askedFor[s.md5] = askedFor[s.md5] || {})[kind] = true; return prepare(s, undefined, onStep); },
+    background: async file => { await chooseBackground(file); return prepare(s); },
+    rating: Community.canRate(s.md5) ? { summary: () => Community.summary(s.md5), mine: level => Community.myVote(s.md5, level), rate: (level, stars) => Community.rate(s.md5, level, stars) } : null,
     onDownload: () => enqueue([s]),
     onExport: () => exportSong(s),
     preferDiff: want().includes('M') ? 'M' : want()[0],
   });
 }
 
+/* ---------- community: counter and weekly top ---------- */
+let topSongs = [];
+async function loadCommunity() {
+  const [n, list] = await Promise.all([Community.total(), Community.top(10)]);
+  if (n > 0) {
+    $('#counter').innerHTML = `🎸 <b>${Number(n).toLocaleString('es')}</b> ${n === 1 ? 'canción descargada' : 'canciones descargadas'}`;
+    $('#counter').classList.remove('hidden');
+  }
+  topSongs = (list || []).map(x => ({ md5: x.md5, artist: x.artist, name: x.name, downloads: x.downloads }));
+  $('#topWeek').classList.toggle('hidden', !topSongs.length);
+  $('#topList').innerHTML = topSongs.map((s, i) => `
+    <div class="prow" data-md5="${esc(s.md5)}">
+      <span class="pn">${i + 1}</span>
+      <span class="pt"><b>${esc(s.name)}</b><small>${esc(s.artist)} · ${Number(s.downloads).toLocaleString('es')} ${s.downloads === 1 ? 'descarga' : 'descargas'}</small></span>
+      <span class="row" style="gap:6px"><button class="pv-btn" title="Vista previa">▶</button><button class="dl">Descargar</button></span>
+      <div class="status ${statusOf[s.md5]?.cls || ''}" id="st-${esc(s.md5)}">${esc(statusOf[s.md5]?.text || '')}</div>
+    </div>`).join('');
+}
+
 /* ---------- packs ---------- */
 const packSongs = p => p.songs.map(x => ({ md5: x.m, artist: x.a, name: x.n }));
 function renderPacks() {
-  $('#packGrid').innerHTML = PACKS.map(p => `
-    <button class="pack" data-pack="${p.id}" style="--c1:${p.colors[0]};--c2:${p.colors[1]}">
-      <span class="pack-emoji">${p.emoji}</span>
-      <span class="pack-title">${esc(p.title)}</span>
-      <span class="pack-desc">${esc(p.desc)}</span>
-      <span class="pack-count">${p.songs.length} canciones</span>
-    </button>`).join('');
+  const groups = [...new Set(PACKS.map(p => p.group || 'Listas especiales'))];
+  $('#packGrid').innerHTML = groups.map(g => `
+    <h2 class="pack-group">${esc(g)}</h2>
+    <div class="packs">${PACKS.filter(p => (p.group || 'Listas especiales') === g).map(p => `
+      <button class="pack" data-pack="${p.id}" style="--c1:${p.colors[0]};--c2:${p.colors[1]}">
+        <span class="pack-emoji">${p.emoji}</span>
+        <span class="pack-title">${esc(p.title)}</span>
+        <span class="pack-desc">${esc(p.desc)}</span>
+        <span class="pack-count">${p.songs.length} canciones</span>
+      </button>`).join('')}</div>`).join('');
 }
 function openPack(id, push = true) {
   const p = PACKS.find(x => x.id === id);
   if (!p) return;
   tab('packs');
   if (push) setUrl({ pack: id });
+  Analytics.track('pack_open', { pack: id });
   const songs = packSongs(p);
   $('#packGrid').classList.add('hidden');
   $('#packDetail').classList.remove('hidden');
@@ -254,7 +406,7 @@ function openPack(id, push = true) {
       <button class="pv-btn" title="Vista previa">▶</button>
       <div class="status ${statusOf[s.md5]?.cls || ''}" id="st-${s.md5}">${esc(statusOf[s.md5]?.text || '')}</div>
     </div>`).join('');
-  $('#packDl').onclick = () => enqueue(songs);
+  $('#packDl').onclick = () => { Analytics.track('pack_download', { pack: id }); enqueue(songs); };
   $('#packShare').onclick = () => share({ pack: id }, `Pack ${p.title} para Clone Hero`);
 }
 function closePack() { $('#packGrid').classList.remove('hidden'); $('#packDetail').classList.add('hidden'); setUrl({}); }
@@ -306,27 +458,50 @@ async function* walk(dir, path = '') {
     else if (/\.sng$/i.test(name)) yield { dir, name, h, path: path + name };
   }
 }
-async function fixLibrary() {
+// the same library, read from a writable folder (Chrome, Edge) or from a read-only folder selection (Firefox, Safari)
+async function* libraryEntries(files) {
+  if (files) {
+    for (const file of files) if (/\.sng$/i.test(file.name)) yield { path: file.webkitRelativePath || file.name, name: file.name, getFile: async () => file };
+    return;
+  }
+  for await (const f of walk(dirHandle)) yield { path: f.path, name: f.name, getFile: () => f.h.getFile(), dir: f.dir, h: f.h };
+}
+async function fixLibrary(files) {
   const log = $('#libLog'); const say = t => { log.textContent += t + '\n'; log.scrollTop = log.scrollHeight; };
-  if (!dirHandle && !(await pickFolder())) return;
-  if (!(await ensurePermission())) { say('Sin permiso para la carpeta.'); return; }
+  if (!files) {
+    if (!dirHandle && !(await pickFolder())) return;
+    if (!(await ensurePermission())) { say('Sin permiso para la carpeta.'); return; }
+  }
   log.classList.remove('hidden'); log.textContent = ''; $('#fixLib').disabled = true;
   let n = 0, fixed = 0;
-  for await (const f of walk(dirHandle)) {
+  for await (const f of libraryEntries(files)) {
     n++;
     try {
-      const buf = new Uint8Array(await (await f.h.getFile()).arrayBuffer());
-      const { bytes, added } = processSng(buf, want(), $('#allInst').checked, knobs);
-      if (!added.length) { say(`OK         ${f.path}`); continue; }
-      const bk = await f.dir.getFileHandle(f.name + '.original', { create: true });
-      let w = await bk.createWritable(); await w.write(buf); await w.close();
-      w = await f.h.createWritable(); await w.write(bytes); await w.close();
-      fixed++; say(`ARREGLADA  ${f.path} → ${summarize(added)}`);
+      const buf = new Uint8Array(await (await f.getFile()).arrayBuffer());
+      const { bytes: rich, extras } = await enrichBytes({ md5: f.path, artist: '', name: '' }, buf, { lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked }, t => say(`           ${f.path}: ${t}`));
+      const { bytes, added } = processSng(rich, want(), $('#allInst').checked, knobs);
+      const note = [added.length ? summarize(added) : '', extrasText(extras)].filter(Boolean).join(' · ');
+      if (bytes === buf) { say(`OK         ${f.path}${note ? ' → ' + note : ''}`); continue; }
+      if (f.h) {
+        const bk = await f.dir.getFileHandle(f.name + '.original', { create: true });
+        let w = await bk.createWritable(); await w.write(buf); await w.close();
+        w = await f.h.createWritable(); await w.write(bytes); await w.close();
+      } else {
+        zipBatch.push({ md5: 'lib-' + n, name: f.path, bytes, gen: note });
+        if (zipBatch.length >= ZIP_EVERY) flushZip();
+      }
+      fixed++; say(`ARREGLADA  ${f.path} → ${note}`);
     } catch (e) { say(`ERROR      ${f.path}: ${e.message}`); }
   }
-  say(`\nListo: ${n} canciones revisadas, ${fixed} arregladas. En Clone Hero dale a "Scan Songs".`);
+  if (files) { flushZip(); zipPart = 0; }
+  say(`\nListo: ${n} canciones revisadas, ${fixed} arregladas. ${files && fixed ? 'Descomprime los .zip sobre tu carpeta Songs para reemplazarlas. ' : ''}En Clone Hero dale a "Scan Songs".`);
   $('#fixLib').disabled = false;
   if (fixed) { FX.sparks(); FX.strum(); }
+}
+// picks the library the right way for this browser, straight from the click
+function runLibrary(action) {
+  if (canPickDir) return action === 'fix' ? fixLibrary() : libraryStats();
+  $('#libInput').dataset.action = action; $('#libInput').value = ''; $('#libInput').click();
 }
 
 // reads only the header and the chart of each .sng, so big libraries are fast
@@ -339,16 +514,18 @@ async function readLite(file) {
   const diffs = CHB.sngDifficulties({ meta: [], files: [{ name: chart.name, data: CHB.xorData(raw, mask) }] });
   return { meta, diffs };
 }
-async function libraryStats() {
-  if (!dirHandle && !(await pickFolder())) return;
-  if (!(await ensurePermission())) return;
+async function libraryStats(files) {
+  if (!files) {
+    if (!dirHandle && !(await pickFolder())) return;
+    if (!(await ensurePermission())) return;
+  }
   const out = $('#stats'); out.classList.remove('hidden');
   out.innerHTML = '<div class="empty loading">Revisando tu biblioteca…</div>';
   $('#statsLib').disabled = true;
   const rows = []; let bytes = 0, n = 0;
-  for await (const f of walk(dirHandle)) {
+  for await (const f of libraryEntries(files)) {
     try {
-      const file = await f.h.getFile(); bytes += file.size;
+      const file = await f.getFile(); bytes += file.size;
       const { meta, diffs } = await readLite(file);
       rows.push({ path: f.path, artist: meta.artist || '¿?', name: meta.name || f.name, genre: meta.genre || 'Sin género', g: diffs.guitar || [], insts: Object.keys(diffs) });
     } catch { rows.push({ path: f.path, artist: '¿?', name: f.name, genre: 'Sin género', g: [], insts: [], bad: true }); }
@@ -393,7 +570,7 @@ function pickAudio(file) {
   else { $('#acName').value = base.trim(); }
   $('#acGo').disabled = false;
 }
-const createdLevels = () => processSng(created.bytes, want(), true, knobs);
+const createdLevels = onStep => prepareFrom(created.song, Promise.resolve(created.bytes), onStep);
 async function createFromAudio() {
   if (!acFile) return;
   const artist = $('#acArtist').value.trim() || 'Desconocido', name = $('#acName').value.trim() || 'Mi canción';
@@ -401,9 +578,10 @@ async function createFromAudio() {
   const t0 = performance.now();
   try {
     const r = await AutoChart.create(acFile, {
-      name, artist, sensitivity: +$('#acSens').value,
+      name, artist, sensitivity: +$('#acSens').value, drums: $('#acDrums').checked,
       onProgress: (text, f) => { $('#acProgText').textContent = text; $('#acProgBar').style.width = (f * 100).toFixed(0) + '%'; },
     });
+    Analytics.track('chart_from_audio', { song: `${artist} - ${name}` });
     created = { ...r, song: { md5: 'local-' + Date.now(), artist, name } };
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     $('#acTitle').textContent = `${artist} – ${name}`;
@@ -422,18 +600,20 @@ function previewCreated() {
   if (!created) return;
   Preview.open({
     song: created.song,
-    fetchBytes: async () => createdLevels(),
-    regenerate: async k => { setKnobs(k); return createdLevels(); },
+    fetchBytes: () => createdLevels(),
+    regenerate: k => { setKnobs(k); return createdLevels(); },
     knobs,
+    extra: (kind, onStep) => { (askedFor[created.song.md5] = askedFor[created.song.md5] || {})[kind] = true; return createdLevels(onStep); },
+    background: async file => { await chooseBackground(file); return createdLevels(); },
     onDownload: saveCreated,
-    onExport: () => exportSong(created.song, async () => createdLevels()),
+    onExport: () => exportSong(created.song, () => createdLevels()),
     preferDiff: want().includes('M') ? 'M' : want()[0],
   });
 }
 async function saveCreated() {
   if (!created) return;
   try {
-    const where = await saveSong(fileName(created.song), createdLevels().bytes);
+    const where = await saveSong(fileName(created.song), (await createdLevels()).bytes);
     FX.sparks(); FX.strum();
     FX.toast(`<b>¡Rock on! 🤘</b> ${esc(created.song.name)} ${esc(where)}<br><small>En Clone Hero: Settings → General → Scan Songs</small>`, 6000);
   } catch (e) { FX.toast('✖ ' + esc(e.message)); }
@@ -459,7 +639,13 @@ $('#chips').onclick = e => { const q = e.target.dataset.q; if (!q) return; $('#q
 $('#moreBtn').onclick = () => doSearch(state.args, state.limit + 20, false);
 $('#filter').onchange = () => { if (state.args) doSearch({ ...state.args }, state.limit, false); };
 $('#shareSearch').onclick = () => { const a = state.args; const [por, q] = Object.entries(a)[0]; share({ q, por }, `Canciones de ${q} para Clone Hero`); };
-for (const id of ['#needE', '#needM', '#needH', '#allInst']) $(id).onchange = () => { render(); savePrefs(); };
+for (const id of ['#needE', '#needM', '#needH', '#allInst', '#addLyrics', '#addDrums']) $(id).onchange = () => { render(); savePrefs(); };
+$('#bgFile').onchange = e => { chooseBackground(e.target.files[0]); e.target.value = ''; };
+$('#bgClear').onclick = () => { bgMedia = null; showBackground(); };
+$('#libInput').onchange = e => {
+  const files = [...e.target.files];
+  if (e.target.dataset.action === 'fix') fixLibrary(files); else libraryStats(files);
+};
 
 $('#results').onclick = e => {
   const card = e.target.closest('.song'); if (!card) return;
@@ -472,6 +658,12 @@ $('#results').addEventListener('mouseover', e => {
   const card = e.target.closest('.song'); if (!card) return;
   setBackdrop(state.items.find(x => x.md5 === card.dataset.md5));
 });
+$('#topList').onclick = e => {
+  const row = e.target.closest('.prow'); if (!row) return;
+  const s = topSongs.find(x => x.md5 === row.dataset.md5); if (!s) return;
+  if (e.target.closest('.dl')) enqueue([s]);
+  if (e.target.closest('.pv-btn')) openPreview(s);
+};
 $('#dlSel').onclick = () => { enqueue(state.items.filter(s => state.sel.has(s.md5))); state.sel.clear(); render(); };
 
 $('#packGrid').onclick = e => { const b = e.target.closest('.pack'); if (b) { FX.pick(); openPack(b.dataset.pack); } };
@@ -495,8 +687,8 @@ $('#acGo').onclick = createFromAudio;
 $('#acPreview').onclick = previewCreated;
 $('#acDl').onclick = saveCreated;
 $('#acEdit').onclick = () => created && exportSong(created.song, async () => createdLevels());
-$('#fixLib').onclick = fixLibrary;
-$('#statsLib').onclick = libraryStats;
+$('#fixLib').onclick = () => runLibrary('fix');
+$('#statsLib').onclick = () => runLibrary('stats');
 $('#soundBtn').onclick = () => {
   FX.setSound(!FX.soundOn);
   $('#soundBtn').classList.toggle('on', FX.soundOn);
@@ -510,7 +702,9 @@ $('#soundBtn').onclick = () => {
   const p = await kv('prefs');
   if (p) { $('#needE').checked = p.w.includes('E'); $('#needM').checked = p.w.includes('M'); $('#needH').checked = p.w.includes('H'); $('#allInst').checked = p.all; }
   if (p && p.knobs) knobs = { ...CHB.DEFAULT_KNOBS, ...p.knobs };
-  showKnobs();
+  if (p && p.lyrics !== undefined) $('#addLyrics').checked = p.lyrics;
+  if (p && p.drums !== undefined) $('#addDrums').checked = p.drums;
+  showKnobs(); showBackground(); Analytics.init(); loadCommunity();
   $('#soundBtn').classList.toggle('on', FX.soundOn);
   $('#soundBtn').textContent = FX.soundOn ? '🔊 Sonido' : '🔇 Sonido';
   showFolder(); renderPacks(); renderSuggestions(); render();

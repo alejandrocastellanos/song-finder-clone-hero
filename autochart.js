@@ -232,6 +232,86 @@ const AutoChart = (() => {
     return { chart, notes: notes.length };
   }
 
+  /* ---------- drums: kick, snare and cymbals from three frequency bands ---------- */
+  async function drumHits(x, onProgress = () => { }) {
+    const frames = Math.max(1, Math.floor((x.length - N) / HOP) + 1), fps = SR / HOP;
+    const bin = hz => Math.round(hz * N / SR);
+    const bands = { kick: [bin(40), bin(120)], snare: [bin(1500), bin(5000)], body: [bin(150), bin(400)], hat: [bin(5500), bin(10500)] };
+    const flux = {}, energy = {};
+    for (const b in bands) { flux[b] = new Float32Array(frames); energy[b] = new Float32Array(frames); }
+    const win = hann(N), re = new Float32Array(N), im = new Float32Array(N);
+    let prev = new Float32Array(N / 2), cur = new Float32Array(N / 2);
+    for (let f = 0; f < frames; f++) {
+      spectrum(x, f * HOP, N, win, re, im);
+      for (let k = 1; k < N / 2; k++) cur[k] = Math.log1p(100 * Math.hypot(re[k], im[k]));
+      for (const b in bands) {
+        const [lo, hi] = bands[b];
+        let fl = 0, en = 0;
+        for (let k = lo; k <= hi; k++) { const d = cur[k] - prev[k]; if (d > 0) fl += d; en += cur[k]; }
+        flux[b][f] = fl / (hi - lo + 1); energy[b][f] = en / (hi - lo + 1);
+      }
+      const t = prev; prev = cur; cur = t;
+      if (f % 2000 === 0) { onProgress(f / frames); await tick(); }
+    }
+    const peaks = (a, delta, gapSec) => {
+      const mean = movingMean(a, Math.round(fps * 0.3));
+      let s = 0, s2 = 0; for (const v of a) { s += v; s2 += v * v; }
+      const std = Math.sqrt(Math.max(1e-9, s2 / a.length - (s / a.length) ** 2));
+      const out = [], gap = Math.round(fps * gapSec);
+      for (let i = 2; i < a.length - 2; i++) {
+        if (a[i] < mean[i] + delta * std || a[i] < a[i - 1] || a[i] < a[i - 2] || a[i] < a[i + 1] || a[i] < a[i + 2]) continue;
+        if (out.length && i - out[out.length - 1].f < gap) { if (a[i] > out[out.length - 1].v) { out[out.length - 1].f = i; out[out.length - 1].v = a[i]; } continue; }
+        out.push({ f: i, v: a[i] });
+      }
+      return out;
+    };
+    const latency = (N / 2) / SR, time = f => f / fps + latency, hits = [];
+    const kicks = peaks(flux.kick, 2.0, 0.11).map(p => p.f);
+    for (const f of kicks) hits.push({ t: time(f), lane: 0 });
+    // a snare needs both its noise and its body to jump at the same moment;
+    // on top of a kick (whose click leaks into those bands) it must also be clearly strong
+    const bodyPeaks = peaks(flux.body, 1.0, 0.05).map(p => p.f), snares = peaks(flux.snare, 2.0, 0.11);
+    const loud = snares.map(p => p.v).sort((a, b) => a - b)[Math.floor(snares.length * 0.6)] ?? Infinity;
+    for (const p of snares) {
+      if (!bodyPeaks.some(f => Math.abs(f - p.f) <= 2)) continue;
+      if (kicks.some(f => Math.abs(f - p.f) <= 3) && p.v < loud) continue;
+      hits.push({ t: time(p.f), lane: 1 });
+    }
+    // cymbals: a strong hit that keeps ringing is an occasional crash (green), the rest a hi-hat (yellow)
+    const after = Math.round(fps * 0.35), hatPeaks = peaks(flux.hat, 0.5, 0.08);
+    const strong = hatPeaks.map(p => p.v).sort((a, b) => a - b)[Math.floor(hatPeaks.length * 0.9)] ?? Infinity;
+    let lastCrash = -Infinity;
+    for (const p of hatPeaks) {
+      const start = energy.hat[p.f], ring = energy.hat[Math.min(frames - 1, p.f + after)];
+      const crash = p.v >= strong && ring > 0.9 * start && time(p.f) - lastCrash > 2;
+      if (crash) lastCrash = time(p.f);
+      hits.push({ t: time(p.f), lane: crash ? 4 : 2 });
+    }
+    return hits.sort((a, b) => a.t - b.t);
+  }
+
+  async function mixToMono(files) {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const bufs = (await Promise.all(files.map(f => ac.decodeAudioData(f.data.slice().buffer).catch(() => null)))).filter(Boolean);
+    ac.close && ac.close();
+    if (!bufs.length) throw new Error('No se pudo leer el audio de esta canción.');
+    const dur = Math.max(...bufs.map(b => b.duration));
+    const off = new OfflineAudioContext(1, Math.ceil(dur * SR), SR);
+    for (const b of bufs) { const s = off.createBufferSource(); s.buffer = b; s.connect(off.destination); s.start(); }
+    return (await off.startRendering()).getChannelData(0);
+  }
+
+  /* Adds an Expert drum track to a parsed .sng that has none. Uses the drum stems when the song has them.
+     Returns { fromStems } and mutates sng. */
+  async function addDrums(sng, onProgress = () => { }) {
+    const audio = sng.files.filter(f => /\.(ogg|opus|mp3|wav)$/i.test(f.name) && !/^(preview|crowd)\./i.test(f.name));
+    const stems = audio.filter(f => /^drums/i.test(f.name));
+    const mono = await mixToMono(stems.length ? stems : audio);
+    const hits = await drumHits(mono, onProgress);
+    if (!hits.length || !CHB.addDrumTrack(sng, hits)) throw new Error('No se pudo crear la batería.');
+    return { fromStems: stems.length > 0, hits: hits.length };
+  }
+
   /* ---------- WAV encoder for formats Clone Hero can't play ---------- */
   function toWav(buf) {
     const ch = Math.min(2, buf.numberOfChannels), len = buf.length, out = new DataView(new ArrayBuffer(44 + len * ch * 2));
@@ -268,10 +348,16 @@ const AutoChart = (() => {
       ['name', opts.name], ['artist', opts.artist], ['charter', 'CH Buscador (automático)'], ['genre', 'rock'],
       ['song_length', String(Math.round(duration * 1000))], ['diff_guitar', '-1'], ['loading_phrase', 'Chart creado automáticamente desde el audio con CH Buscador'],
     ];
-    const sng = CHB.writeSng({ version: 1, meta, files: [{ name: 'notes.chart', data: new TextEncoder().encode(chart) }, audio] });
+    const parsed = { version: 1, meta, files: [{ name: 'notes.chart', data: new TextEncoder().encode(chart) }, audio] };
+    let drumHitCount = 0;
+    if (opts.drums !== false) {
+      say('Sacando la batería…', 0.9);
+      const hits = await drumHits(mono);
+      if (hits.length && CHB.addDrumTrack(parsed, hits)) drumHitCount = hits.length;
+    }
     say('¡Listo!', 1);
-    return { bytes: sng, bpm, notes, duration };
+    return { bytes: CHB.writeSng(parsed), bpm, notes, duration, drumHits: drumHitCount };
   }
 
-  return { create };
+  return { create, addDrums, drumHits };
 })();

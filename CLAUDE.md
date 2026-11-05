@@ -14,5 +14,7 @@ Busca canciones para Clone Hero en Chorus Encore y genera las dificultades que f
 - `preview.js`: vista previa jugable (autopista de notas en canvas + audio con Web Audio) y perillas de los niveles creados.
 - `fx.js`: avisos, chispas y sonidos sintetizados.
 - `packs.js`: listas de canciones armadas a mano (id del chart en Chorus Encore).
-- `autochart.js`: experimental, crea un chart Expert desde un audio (flujo espectral para los golpes, seguimiento de pulso por programación dinámica, tono por HPS para los botones). Solo navegador.
+- `autochart.js`: experimental, crea un chart Expert desde un audio (flujo espectral para los golpes, seguimiento de pulso por programación dinámica, tono por HPS para los botones). También crea batería desde el audio. Solo navegador.
+- `analytics.js`: Google Analytics 4; no hace nada hasta poner `GA_ID` y solo carga si la persona acepta.
+- `community.js` + `supabase/schema.sql`: contador, lo más descargado y valoraciones en Supabase; solo escribe desde la página publicada.
 - `manifest.webmanifest`, `sw.js`, `icons/`: para instalarla como app (PWA).

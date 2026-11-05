@@ -53,6 +53,12 @@ node cli/chb.js descargar --numeros 1,2,5-8 --carpeta "RUTA"
 
 Al terminar, dile cuántas se guardaron, cuáles tenían dificultades originales y a cuáles se les generaron, y cualquier error. Recuérdale: en Clone Hero ir a **Settings → General → Scan Songs** (y agregar la carpeta en **Song Folders** si es nueva).
 
+## Letra, fondo y batería
+
+- Si quiere letra en las que no la traen, agrega `--letra` al descargar. Si no hay una versión con la misma duración, no se agrega: dilo.
+- Si quiere un fondo, agrega `--fondo "RUTA"` con una imagen (png, jpg) o un video (mp4, webm, avi, ogv, mpeg).
+- Crear batería desde el audio solo se puede en la web (`index.html`, opción "Crear la batería").
+
 ## Si los niveles creados no le gustan
 
 Si dice que tienen demasiadas notas, muy pocas, que los acordes le cuestan o que extraña el naranja en Medio, vuelve a descargar esas canciones con ajustes (solo cambian los niveles creados, nunca los originales):

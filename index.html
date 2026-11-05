@@ -289,6 +289,25 @@
   .pv-dens { width: 120px; }
   .pv-knobs label.chk { padding: 4px 10px 4px 6px; font-size: 14px; }
   .pv-knobs .pv-reset { padding: 4px 10px; font-size: 13px; }
+  .btn-file { font: 600 14px var(--body); cursor: pointer; border-radius: 4px; padding: 6px 12px; background: linear-gradient(180deg, #2c2832, #1a171d); border: 1px solid var(--line); }
+  .btn-file:hover { border-color: var(--fire2); }
+  .bg-pick b { color: #9fd4ff; font-weight: 600; }
+  .pack-group { margin: 22px 2px 10px; font-size: 30px; }
+  .pack-group:first-child { margin-top: 0; }
+  .pv-bgm { position: absolute; inset: 0; overflow: hidden; }
+  .pv-bgm img, .pv-bgm video { width: 100%; height: 100%; object-fit: cover; opacity: .55; display: block; }
+  .pv-stage canvas { position: relative; }
+  .pv-lyrics { position: absolute; left: 0; right: 0; top: 10px; padding: 6px 16px; text-align: center; font: 700 clamp(16px, 2.6vw, 24px) var(--body); color: #cfc8c0; text-shadow: 0 2px 6px #000, 0 0 2px #000; pointer-events: none; }
+  .pv-lyrics b { color: var(--fire3); font-weight: 700; }
+  .pv-extra { padding: 6px 12px; font-size: 14px; }
+  .consent { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); width: min(720px, calc(100% - 24px)); z-index: 70; display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 16px; border-radius: 8px; font-size: 14px; color: var(--muted); background: rgba(14,12,16,.97); border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(0,0,0,.6); }
+  .consent button.primary { font-size: 18px; padding: 6px 16px; }
+  .counter { margin: 8px 0 0; font-size: 15px; color: var(--muted); }
+  .counter b { font-family: var(--display); font-weight: 400; font-size: 24px; letter-spacing: 1px; color: var(--fire3); }
+  .pv-rate { padding: 6px 10px; border-radius: 6px; background: rgba(255,210,31,.05); }
+  .pv-stars { display: inline-flex; }
+  .star { padding: 0 3px; border: 0; background: none; font-size: 24px; line-height: 1; color: var(--dim); }
+  .star.on, .star:hover { color: var(--gM); text-shadow: 0 0 8px rgba(255,210,31,.6); }
   .knobs-info { margin-top: 12px; font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .knobs-info b { color: #9fd4ff; font-weight: 600; }
   .pv-stats { color: var(--muted); font-size: 14px; }
@@ -324,6 +343,7 @@
   <div class="topbar"><button id="soundBtn" title="Sonidos de guitarra al buscar y al terminar descargas">🔇 Sonido</button></div>
   <h1 class="logo">CH Buscador</h1>
   <p class="tagline">Busca cualquier canción para Clone Hero · <b>si no trae tu nivel, te lo creamos</b></p>
+  <p class="counter hidden" id="counter"></p>
   <div class="highway" aria-hidden="true">
     <div class="road">
       <i class="note" style="--lane:0;--c:var(--gE);--d:0s"></i>
@@ -360,6 +380,14 @@
       <label class="chk lv-H"><input type="checkbox" id="needH" checked> Difícil</label>
       <label class="chk lv-B"><input type="checkbox" id="allInst" checked> También bajo, batería y teclado</label>
     </div>
+    <div class="row" style="margin-top:12px">
+      <span class="sub">Si le falta:</span>
+      <label class="chk"><input type="checkbox" id="addLyrics" checked> 🎤 Agregar la letra</label>
+      <label class="chk" title="Tarda unos segundos más por canción"><input type="checkbox" id="addDrums"> 🥁 Crear la batería</label>
+      <span class="sub bg-pick">🖼 Fondo: <b id="bgLabel"></b></span>
+      <label class="btn-file"><input type="file" id="bgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>Elegir imagen o video</label>
+      <button class="ghost chip hidden" id="bgClear">Quitar</button>
+    </div>
     <div class="knobs-info" id="knobsInfo"></div>
   </div>
 
@@ -392,6 +420,7 @@
         <span><span class="flames"><i class="on">🔥</i><i class="on">🔥</i><i>🔥</i></span> intensidad</span>
       </div>
     </div>
+    <div class="card hidden" id="topWeek"><h2>🔥 Lo más descargado esta semana</h2><div class="plist" id="topList"></div></div>
     <div class="results-head hidden" id="resultsHead"><span id="resultsCount"></span><button class="ghost" id="shareSearch">🔗 Compartir búsqueda</button></div>
     <div id="results" class="results"></div>
     <div class="more"><button id="moreBtn" class="hidden">Cargar más</button></div>
@@ -402,7 +431,7 @@
   </section>
 
   <section id="view-packs" class="hidden">
-    <div class="packs" id="packGrid"></div>
+    <div id="packGrid"></div>
     <div class="card pack-detail hidden" id="packDetail">
       <div class="row" style="justify-content:space-between">
         <button class="ghost" id="packBack">← Todos los packs</button>
@@ -418,6 +447,7 @@
       <h2>Mi biblioteca</h2>
       <p class="sub" style="margin-top:0">Revisa las canciones <b>.sng</b> de tu carpeta (y subcarpetas). <b>Ver estadísticas</b> solo mira, no cambia nada. <b>Revisar y arreglar</b> les crea los niveles que falten y guarda una copia <b>.sng.original</b> de cada canción que modifica.</p>
       <div class="row"><button id="statsLib">📊 Ver estadísticas</button><button class="primary" id="fixLib">Revisar y arreglar</button></div>
+      <input type="file" id="libInput" webkitdirectory multiple hidden>
       <div class="log hidden" id="libLog"></div>
     </div>
     <div class="card hidden" id="stats"></div>
@@ -442,6 +472,7 @@
           <option value="2" selected>Notas normales</option>
           <option value="3">Muchas notas</option>
         </select>
+        <label class="chk"><input type="checkbox" id="acDrums" checked> 🥁 Crear batería</label>
         <button class="primary" id="acGo" disabled>Crear chart</button>
       </div>
       <div class="ac-prog hidden" id="acProg"><span id="acProgText"></span><div class="qtrack"><i id="acProgBar"></i></div></div>
@@ -462,11 +493,23 @@
 
 <footer>Canciones de <a href="https://www.enchor.us" target="_blank" rel="noopener">Chorus Encore</a> · los charts son obra de sus autores · los niveles creados son automáticos</footer>
 
+<script src="analytics.js"></script>
+<script src="community.js"></script>
 <script src="core/chb-core.js"></script>
 <script src="packs.js"></script>
 <script src="fx.js"></script>
 <script src="preview.js"></script>
 <script src="autochart.js"></script>
 <script src="app.js"></script>
+<script src="https://storage.ko-fi.com/cdn/scripts/overlay-widget.js"></script>
+<script>
+  // a blocker may stop Ko-fi from loading; the rest of the app does not depend on it
+  if (window.kofiWidgetOverlay) kofiWidgetOverlay.draw('alejodev', {
+    'type': 'floating-chat',
+    'floating-chat.donateButton.text': 'Apóyame',
+    'floating-chat.donateButton.background-color': '#00b9fe',
+    'floating-chat.donateButton.text-color': '#fff'
+  });
+</script>
 </body>
 </html>

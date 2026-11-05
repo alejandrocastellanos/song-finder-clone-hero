@@ -81,6 +81,7 @@ async function cmdDescargar(o) {
   const { last, items } = pickFromLast(o);
   const want = o.niveles ? levels(o.niveles) : last.want;
   const k = knobs(o);
+  const media = o.fondo && o.fondo !== true ? { name: path.basename(o.fondo), data: new Uint8Array(fs.readFileSync(o.fondo)) } : null;
   const allInst = !o['solo-guitarra'];
   const report = [];
   for (const s of items) {
@@ -88,7 +89,19 @@ async function cmdDescargar(o) {
     try {
       process.stdout.write(`Descargando ${s.artist} - ${s.name}… `);
       const buf = await CHB.fetchSng(s.md5);
-      const { bytes, added } = CHB.processSng(buf, want, allInst, k);
+      let source = buf, lyricNote = '';
+      if (o.letra) {
+        const sng = CHB.readSng(buf), meta = Object.fromEntries(sng.meta);
+        if (CHB.hasLyrics(sng)) lyricNote = ' · ya traía letra';
+        else {
+          const seconds = (+meta.song_length || s.song_length || 0) / 1000;
+          const lines = await CHB.findLyrics({ artist: meta.artist || s.artist, name: meta.name || s.name, duration: seconds }).catch(() => null);
+          const phrases = lines ? CHB.lrcToPhrases(lines, seconds) : [];
+          if (phrases.length && CHB.addLyrics(sng, phrases)) { source = CHB.writeSng(sng); lyricNote = ' · letra agregada'; } else lyricNote = ' · no encontré la letra con tiempos';
+        }
+      }
+      const done = CHB.processSng(source, want, allInst, k), added = done.added;
+      const bytes = media ? CHB.writeSng(CHB.setBackground(CHB.readSng(done.bytes), media)) : done.bytes;
       if (o.editable) {
         // classic song folder (song.ini + chart + audio) that Moonscraper and Clone Hero can open
         const sng = CHB.readSng(bytes), meta = Object.fromEntries(sng.meta);
@@ -103,7 +116,7 @@ async function cmdDescargar(o) {
       fs.writeFileSync(path.join(dir, name), bytes);
       const g = (CHB.sngDifficulties(bytes).guitar || []);
       const ok = want.every(k => g.includes(k));
-      const msg = added.length ? `generé ${CHB.summarize(added)}` : 'ya traía lo necesario';
+      const msg = (added.length ? `generé ${CHB.summarize(added)}` : 'ya traía los niveles') + lyricNote;
       console.log(ok ? `OK (${msg})` : `ATENCIÓN: no se pudo completar la guitarra (${msg})`);
       report.push({ cancion: `${s.artist} - ${s.name}`, archivo: name, ok, generado: added });
     } catch (e) {
@@ -168,6 +181,10 @@ function help() {
     --sin-acordes         solo notas sueltas en Medio y Difícil
     --naranja-medio       permite el botón naranja en Medio
     --editable            guarda una carpeta (song.ini + chart + audio) para abrirla en Moonscraper
+    --letra               si la canción no trae letra, la busca en LRCLIB y la agrega con tiempos
+    --fondo "ARCHIVO"     pone esta imagen (png, jpg) o video (mp4, webm, avi, ogv, mpeg) de fondo
+
+  Crear la batería desde el audio solo está en la web, porque necesita decodificar el audio del navegador.
   node cli/chb.js carpetas                      muestra dónde suele estar la carpeta Songs`);
 }
 

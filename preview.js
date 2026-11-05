@@ -10,6 +10,8 @@ const Preview = (() => {
   let el, cv, ctx2d, actx, gain, buffers = [], sources = [], tl = null, song = null;
   let playing = false, startCtx = 0, startPos = 0, pausedPos = 0, duration = 0, raf = 0, clock0 = 0;
   let inst = 'guitar', diff = 'X', generated = [], onDownload = null, onExport = null, regenerate = null, hitFlash = [0, 0, 0, 0, 0, 0];
+  let extraFn = null, backgroundFn = null, bgUrl = null, bgVideoEl = null, lastLyric = null;
+  let ratingApi = null, ratingData = [];
 
   const $ = s => el.querySelector(s);
   const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -25,7 +27,9 @@ const Preview = (() => {
           <button class="pv-x" title="Cerrar">✕</button>
         </div>
         <div class="pv-stage">
+          <div class="pv-bgm"></div>
           <canvas></canvas>
+          <div class="pv-lyrics"></div>
           <div class="pv-load"><div class="pv-load-txt">Cargando…</div><div class="pv-load-bar"><i></i></div></div>
         </div>
         <div class="pv-ctrl">
@@ -47,9 +51,17 @@ const Preview = (() => {
             <label class="chk"><input type="checkbox" class="pv-orange"> Naranja en Medio</label>
             <button class="pv-reset ghost">Restablecer</button>
           </div>
+          <div class="pv-row pv-rate hidden">
+            <span class="pv-kl">⭐ ¿Qué tal quedó este nivel?</span>
+            <span class="pv-stars" role="group" aria-label="Valorar este nivel"></span>
+            <span class="pv-avg sub"></span>
+          </div>
           <div class="pv-row pv-foot">
             <span class="pv-stats"></span>
             <div class="row" style="gap:8px">
+              <button class="pv-extra pv-lyr hidden">🎤 Agregar letra</button>
+              <button class="pv-extra pv-drm hidden">🥁 Crear batería</button>
+              <label class="btn-file">🖼 Fondo<input type="file" class="pv-bgf" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden></label>
               <button class="pv-edit" disabled title="Baja la canción como carpeta .zip para corregirla nota por nota en Moonscraper">✏️ Editar en Moonscraper</button>
               <button class="pv-dl primary" disabled>Descargar</button>
             </div>
@@ -70,6 +82,15 @@ const Preview = (() => {
     $('.pv-vol').oninput = e => { if (gain) gain.gain.value = e.target.value / 100; };
     $('.pv-dl').onclick = () => onDownload && onDownload();
     $('.pv-edit').onclick = () => onExport && onExport();
+    $('.pv-stars').onclick = e => { const s = +e.target.dataset.s; if (s) vote(s); };
+    $('.pv-lyr').onclick = () => askExtra('lyrics');
+    $('.pv-drm').onclick = () => askExtra('drums');
+    $('.pv-bgf').onchange = async e => {
+      const file = e.target.files[0]; e.target.value = '';
+      if (!file || !backgroundFn || !tl) return;
+      $('.pv-stats').textContent = 'Poniendo el fondo…';
+      try { refresh(await backgroundFn(file)); } catch (err) { $('.pv-stats').textContent = '✖ ' + err.message; }
+    };
     let kt = 0;
     const knobChanged = () => { clearTimeout(kt); kt = setTimeout(applyKnobs, 180); };
     $('.pv-dens').oninput = knobChanged;
@@ -105,13 +126,14 @@ const Preview = (() => {
       }
     } else clock0 = performance.now();
     playing = true; $('.pv-play').textContent = '❚❚';
+    if (bgVideoEl) { bgVideoEl.currentTime = startPos; bgVideoEl.play().catch(() => { }); }
     loop();
   }
-  function pause() { pausedPos = now(); playing = false; stopSources(); $('.pv-play').textContent = '▶'; draw(); }
+  function pause() { pausedPos = now(); playing = false; stopSources(); if (bgVideoEl) bgVideoEl.pause(); $('.pv-play').textContent = '▶'; draw(); }
   function toggle() { if (!tl) return; playing ? pause() : play(pausedPos >= duration - 0.2 ? 0 : pausedPos); }
   function seek(t) {
     if (playing) play(t);
-    else { pausedPos = t; $('.pv-time').textContent = fmt(t); draw(); }
+    else { pausedPos = t; $('.pv-time').textContent = fmt(t); if (bgVideoEl) bgVideoEl.currentTime = t; draw(); }
   }
 
   function loop() {
@@ -132,9 +154,12 @@ const Preview = (() => {
     if (!cv || !ctx2d) return;
     const W = cv.width, H = cv.height, g = ctx2d;
     g.clearRect(0, 0, W, H);
-    const bg = g.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#07060a'); bg.addColorStop(1, '#170e10');
-    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    if (!bgUrl) {
+      const bg = g.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#07060a'); bg.addColorStop(1, '#170e10');
+      g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    }
+    showLyrics();
     const notes = tl && tl.tracks[inst] && tl.tracks[inst][diff];
     const drums = inst === 'drums';
     const lanes = drums ? (notes && notes.some(n => n.lanes.includes(5)) ? 5 : 4) : 5;
@@ -237,6 +262,7 @@ const Preview = (() => {
     $('.pv-inst').onclick = e => { const k = e.target.dataset.i; if (!k) return; inst = k; pickDiff(); renderControls(); draw(); };
     $('.pv-diff').onclick = e => { const b = e.target.closest('button'); if (!b || b.disabled) return; diff = b.dataset.d; renderControls(); draw(); };
     $('.pv-knobs').classList.toggle('hidden', !generated.length);
+    showRating();
     const notes = tracks[inst] && tracks[inst][diff];
     const count = notes ? notes.reduce((s, n) => s + n.lanes.length, 0) : 0;
     const nps = notes && duration ? (notes.length / duration).toFixed(1) : 0;
@@ -245,6 +271,88 @@ const Preview = (() => {
   function pickDiff() {
     const tr = tl.tracks[inst] || {};
     if (!tr[diff]) diff = ['M', 'E', 'H', 'X'].find(k => tr[k]) || 'X';
+  }
+
+  /* ---------- ratings of the created levels ---------- */
+  function showRating() {
+    // only levels the app created on this song, and only those that can be voted
+    const on = ratingApi && ['E', 'M', 'H'].includes(diff) && generated.includes(diff + ':' + inst);
+    $('.pv-rate').classList.toggle('hidden', !on);
+    if (!on) return;
+    const mine = ratingApi.mine(diff);
+    $('.pv-stars').innerHTML = [1, 2, 3, 4, 5].map(n => `<button data-s="${n}" class="star ${n <= mine ? 'on' : ''}" aria-label="${n} de 5" title="${n} de 5">★</button>`).join('');
+    const r = ratingData.find(x => x.level === diff);
+    $('.pv-avg').textContent = r ? `${Number(r.average).toFixed(1)} de 5 · ${r.votes} ${r.votes === 1 ? 'voto' : 'votos'}` : 'Sé la primera persona en valorarlo';
+  }
+  async function vote(stars) {
+    if (!ratingApi) return;
+    const level = diff, my = song;
+    try {
+      await ratingApi.rate(level, stars);
+      showRating();
+      const fresh = await ratingApi.summary();
+      if (song === my) { ratingData = fresh; showRating(); }
+    } catch { $('.pv-avg').textContent = 'No se pudo guardar tu voto, intenta de nuevo.'; }
+  }
+
+  /* ---------- lyrics, background and on-demand extras ---------- */
+  function showLyrics() {
+    if (!tl || !tl.lyrics || !tl.lyrics.length) { if (lastLyric !== '') { $('.pv-lyrics').innerHTML = ''; lastLyric = ''; } return; }
+    const t = now(), p = tl.lyrics.find(x => t >= x.t - 0.3 && t <= x.end + 0.4);
+    let html = '';
+    if (p) {
+      const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      p.words.forEach((w, i) => {
+        // chart lyric symbols: - joins syllables, = is a literal hyphen, _ a space, the rest only guide singing
+        const joined = /[-=]$/.test(w.text);
+        const txt = esc(w.text.replace(/-$/, '').replace(/=/g, '-').replace(/_/g, ' ').replace(/[§/%+#^*$]/g, ''));
+        html += (w.t <= t ? `<b>${txt}</b>` : txt) + (joined || i === p.words.length - 1 ? '' : ' ');
+      });
+    }
+    if (html !== lastLyric) { $('.pv-lyrics').innerHTML = html; lastLyric = html; }
+  }
+  function showBg() {
+    const box = $('.pv-bgm');
+    if (bgUrl) URL.revokeObjectURL(bgUrl);
+    bgUrl = null; bgVideoEl = null; box.innerHTML = '';
+    if (!tl) return;
+    const f = tl.bgVideo || tl.bgImage;
+    if (!f) return;
+    bgUrl = URL.createObjectURL(new Blob([f.data]));
+    if (tl.bgVideo) {
+      bgVideoEl = document.createElement('video');
+      bgVideoEl.src = bgUrl; bgVideoEl.muted = true; bgVideoEl.playsInline = true; bgVideoEl.loop = true;
+      box.appendChild(bgVideoEl);
+      if (playing) { bgVideoEl.currentTime = now(); bgVideoEl.play().catch(() => { }); }
+    } else {
+      const img = document.createElement('img'); img.src = bgUrl; img.alt = ''; box.appendChild(img);
+    }
+  }
+  function extraButtons() {
+    $('.pv-lyr').classList.toggle('hidden', !tl || !extraFn || tl.lyrics.length > 0);
+    $('.pv-drm').classList.toggle('hidden', !tl || !extraFn || !!tl.tracks.drums);
+  }
+  // result: { bytes, added, extras } with the song rebuilt
+  function refresh(r) {
+    if (!tl) return;
+    const n = CHB.songTimeline(CHB.readSng(r.bytes));
+    tl.tracks = n.tracks; tl.lyrics = n.lyrics; tl.bgImage = n.bgImage; tl.bgVideo = n.bgVideo;
+    generated = r.added; lastLyric = null;
+    pickDiff(); showBg(); renderControls(); extraButtons(); draw();
+  }
+  async function askExtra(kind) {
+    if (!extraFn) return;
+    const b = kind === 'lyrics' ? $('.pv-lyr') : $('.pv-drm'), my = song;
+    b.disabled = true;
+    try {
+      const r = await extraFn(kind, t => { $('.pv-stats').textContent = t; });
+      if (song !== my) return;
+      refresh(r);
+      if (kind === 'lyrics' && r.extras.lyrics === 'none') $('.pv-stats').textContent = 'No encontré la letra con tiempos para esta versión de la canción.';
+      if (kind === 'drums' && r.extras.drums === 'none') $('.pv-stats').textContent = 'No se pudo crear la batería de esta canción.';
+      if (kind === 'drums' && (r.extras.drums === 'added' || r.extras.drums === 'stems')) { inst = 'drums'; pickDiff(); renderControls(); draw(); }
+    } catch (e) { $('.pv-stats').textContent = '✖ ' + e.message; }
+    finally { b.disabled = false; }
   }
 
   /* ---------- knobs for the generated levels ---------- */
@@ -259,9 +367,7 @@ const Preview = (() => {
     try {
       const { bytes, added } = await regenerate(readKnobs());
       if (song !== my || !tl) return;
-      generated = added;
-      tl.tracks = CHB.songTimeline(CHB.readSng(bytes)).tracks;
-      pickDiff(); renderControls(); draw();
+      refresh({ bytes, added });
     } catch (e) { $('.pv-stats').textContent = '✖ ' + e.message; }
   }
 
@@ -276,6 +382,9 @@ const Preview = (() => {
     if (!el) build();
     close(true);
     song = opts.song; onDownload = opts.onDownload; onExport = opts.onExport; regenerate = opts.regenerate; generated = [];
+    extraFn = opts.extra || null; backgroundFn = opts.background || null; lastLyric = null;
+    ratingApi = opts.rating || null; ratingData = []; $('.pv-rate').classList.add('hidden');
+    if (ratingApi) { const my = opts.song; ratingApi.summary().then(d => { if (song === my) { ratingData = d; if (tl) showRating(); } }); }
     showKnobs(Object.assign({}, CHB.DEFAULT_KNOBS, opts.knobs || {})); $('.pv-knobs').classList.add('hidden');
     el.classList.remove('hidden'); document.body.classList.add('pv-open');
     $('.pv-title').textContent = song.name; $('.pv-artist').textContent = song.artist;
@@ -311,6 +420,7 @@ const Preview = (() => {
       setLoading(null);
       if (!buffers.length) $('.pv-stats').textContent = 'No se pudo reproducir el audio en este navegador; las notas sí se muestran.';
       $('.pv-play').disabled = false; $('.pv-seek').disabled = false; $('.pv-dl').disabled = false; $('.pv-edit').disabled = false;
+      showBg(); extraButtons();
       renderControls(); pausedPos = 0; draw();
       play(0);
     } catch (e) {
@@ -321,6 +431,7 @@ const Preview = (() => {
   function close(keepOpen) {
     cancelAnimationFrame(raf); stopSources(); playing = false; pausedPos = 0;
     buffers = []; tl = null;
+    if (el) { showBg(); $('.pv-lyrics').innerHTML = ''; extraButtons(); }
     if (gain) { try { gain.disconnect(); } catch { } gain = null; }
     if (el && keepOpen !== true) { el.classList.add('hidden'); document.body.classList.remove('pv-open'); song = null; }
     if (el) $('.pv-play').textContent = '▶';

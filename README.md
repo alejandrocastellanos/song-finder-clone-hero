@@ -39,9 +39,13 @@ Las llamas 🔥 (de 0 a 6) indican qué tan intensa es la canción.
 - **✏️ Editar en Moonscraper**: baja la canción como carpeta `.zip` (song.ini + chart + audio) para corregirla nota por nota en Moonscraper Chart Editor.
 - **🧪 Crear desde audio** (experimental): sube un MP3/OGG/WAV de una canción que nadie ha chartiado y la app arma un chart jugable con los 4 niveles. Detecta bien el pulso, pero las notas siguen el ritmo de toda la canción (no solo la guitarra): en pruebas contra charts hechos a mano, encuentra la gran mayoría de las notas reales pero también agrega otras. Todo se procesa en tu PC.
 - **Sonido**: botón arriba a la derecha para activar rasgueos de guitarra al buscar y al terminar descargas.
+- **🎤 Letra**: si la canción no la trae, se busca en [LRCLIB](https://lrclib.net) y se agrega con tiempos, solo en tu copia. LRCLIB sincroniza por línea, así que los tiempos de cada palabra son aproximados. Si no hay una versión con la misma duración, no se agrega, para no quedar desfasada.
+- **🥁 Batería**: si la canción no trae batería, se crea desde el audio con sus 4 niveles. Sale mejor si la canción trae su pista de batería separada. Es un borrador automático: el bombo suele salir bien; el redoblante y los platillos, menos.
+- **🖼 Fondo**: elige una imagen (JPG, PNG) o un video (MP4, WEBM, AVI, OGV, MPEG) y queda dentro de cada canción que guardes. Para verlo, activa los fondos de canción en las opciones de Clone Hero.
+- **Packs por género y por artista**: Metal, Punk, Grunge, Pop, Metallica, Queen, Soda Stereo y muchos más.
 - **Instalarla**: publicada en internet (HTTPS), Chrome y Edge ofrecen instalarla como app con su propio ícono.
 
-> En Firefox o Safari no se puede elegir carpeta: las canciones se bajan como descargas normales y tienes que moverlas a tu carpeta Songs.
+> **Firefox y Safari** no tienen la función de elegir carpeta: una canción baja a Descargas, varias bajan en archivos `.zip`, y las pasas a tu carpeta Songs. **Mi biblioteca** también funciona: lee tu carpeta y te devuelve las canciones arregladas en `.zip`. **Brave** la trae apagada: se activa en `brave://flags/#file-system-access-api`.
 
 ### 2. Con tu agente (Claude Code)
 
@@ -93,3 +97,7 @@ Son reducciones automáticas: se pueden jugar, pero no son tan pulidas como las 
 - Formato `.sng`: [SngFileFormat](https://github.com/mdsitton/SngFileFormat).
 
 Este proyecto no está afiliado a Clone Hero ni a Chorus Encore. Úsalo con moderación: descarga lo que vayas a tocar.
+
+## Estadísticas públicas (Supabase)
+
+El contador de descargas, "Lo más descargado esta semana" y las valoraciones se guardan en Supabase (`community.js`). La estructura está en `supabase/schema.sql`. La web usa solo la clave pública: las tablas no se pueden leer ni cambiar directamente, únicamente a través de esas funciones. Solo cuenta lo que pasa en la página publicada, una vez por canción, navegador y día. No se guardan datos personales, y como no hay cuentas de usuario estas cifras son orientativas.

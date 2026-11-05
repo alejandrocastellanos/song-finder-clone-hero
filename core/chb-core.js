@@ -507,7 +507,246 @@
     if (delay) for (const lv of Object.values(tracks)) for (const notes of Object.values(lv)) for (const n of notes) { n.t += delay; if (n.end) n.end += delay; }
     const audio = sng.files.filter(f => /\.(ogg|opus|mp3|wav)$/i.test(f.name) && !/^preview\./i.test(f.name));
     const image = sng.files.find(f => /^album\.(jpe?g|png)$/i.test(f.name));
-    return { meta, tracks, audio, image };
+    const bgImage = sng.files.find(f => /^background\.(jpe?g|png)$/i.test(f.name));
+    const bgVideo = sng.files.find(f => /^video\.(mp4|webm|ogv)$/i.test(f.name));
+    // lyric times, with the same delay and offset as the notes
+    let lyrics = [];
+    const lclock = (() => {
+      const text = chart ? utf8.decode(chart.data) : '';
+      const res = chart ? +(text.match(/Resolution\s*=\s*(\d+)/) || [0, 192])[1] : (mid ? parseMidi(mid.data).div : 192);
+      const off = chart ? parseFloat((text.match(/Offset\s*=\s*([-\d.]+)/) || [0, 0])[1]) || 0 : 0;
+      const tempo = [];
+      if (chart) { for (const b of text.matchAll(/^\s*(\d+)\s*=\s*B\s+(\d+)/gm)) if (+b[2] > 0) tempo.push({ tick: +b[1], uspq: 6e10 / +b[2] }); }
+      else if (mid) { for (const ev of parseMidi(mid.data).tracks) for (const e of ev) if (e.meta === 0x51 && e.data.length === 3) tempo.push({ tick: e.t, uspq: (e.data[0] << 16) | (e.data[1] << 8) | e.data[2] }); }
+      tempo.sort((a, b) => a.tick - b.tick);
+      const f = tempoMap(tempo, res);
+      return tick => f(tick) + off + delay;
+    })();
+    if (chart) lyrics = lyricsFromChart(utf8.decode(chart.data), lclock);
+    else if (mid) lyrics = lyricsFromMidi(mid.data, lclock);
+    return { meta, tracks, audio, image, bgImage, bgVideo, lyrics };
+  }
+
+  /* ---------- seconds <-> ticks for an existing chart ---------- */
+  function songClock(sng) {
+    const meta = Object.fromEntries(sng.meta);
+    const delay = (parseFloat(meta.delay) || 0) / 1000;
+    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
+    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    let res = 192, offset = delay, tempo = [];
+    if (chart) {
+      const text = utf8.decode(chart.data);
+      let m = text.match(/Resolution\s*=\s*(\d+)/); if (m) res = +m[1];
+      m = text.match(/Offset\s*=\s*([-\d.]+)/); if (m) offset += parseFloat(m[1]) || 0;
+      for (const b of text.matchAll(/^\s*(\d+)\s*=\s*B\s+(\d+)/gm)) if (+b[2] > 0) tempo.push({ tick: +b[1], uspq: 6e10 / +b[2] });
+    } else if (mid) {
+      const p = parseMidi(mid.data); res = p.div;
+      for (const ev of p.tracks) for (const e of ev) if (e.meta === 0x51 && e.data.length === 3) tempo.push({ tick: e.t, uspq: (e.data[0] << 16) | (e.data[1] << 8) | e.data[2] });
+    }
+    tempo.sort((a, b) => a.tick - b.tick);
+    const list = tempo.length && tempo[0].tick === 0 ? tempo : [{ tick: 0, uspq: 500000 }, ...tempo];
+    const segs = []; let sec = 0;
+    list.forEach((s, i) => {
+      segs.push({ tick: s.tick, sec, uspq: s.uspq });
+      if (i + 1 < list.length) sec += (list[i + 1].tick - s.tick) / res * s.uspq / 1e6;
+    });
+    const toTick = seconds => {
+      const t = seconds - offset;
+      let lo = 0, hi = segs.length - 1;
+      while (lo < hi) { const m = (lo + hi + 1) >> 1; if (segs[m].sec <= t) lo = m; else hi = m - 1; }
+      return Math.max(0, Math.round(segs[lo].tick + (t - segs[lo].sec) * 1e6 / segs[lo].uspq * res));
+    };
+    return { res, toTick };
+  }
+
+  /* ---------- lyrics ---------- */
+  const latinDecoder = () => new TextDecoder('latin1');
+  function vocalsTrack(m) {
+    return m.tracks.find(ev => { const n = ev.find(e => e.meta === 3); return n && latinDecoder().decode(n.data).trim() === 'PART VOCALS'; });
+  }
+  const isLyricEvent = e => (e.meta === 5 || e.meta === 1) && e.data.length && e.data[0] !== 0x5B;   // skips [events]
+
+  function hasLyrics(sng) {
+    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
+    if (chart) return /=\s*E\s+"lyric /.test(utf8.decode(chart.data));
+    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    if (!mid) return false;
+    const v = vocalsTrack(parseMidi(mid.data));
+    return !!v && v.some(isLyricEvent);
+  }
+
+  // "[mm:ss.xx] text" lines -> [{ t, text }]
+  function parseLrc(text) {
+    const out = [];
+    for (const line of String(text).split(/\r?\n/)) {
+      const tags = [...line.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];
+      if (!tags.length) continue;
+      const body = line.replace(/\[[^\]]*\]/g, '').trim();
+      for (const t of tags) out.push({ t: +t[1] * 60 + parseFloat(t[2]), text: body });
+    }
+    return out.sort((a, b) => a.t - b.t);
+  }
+
+  // LRCLIB times whole lines; words are spread inside each line in proportion to their length
+  function lrcToPhrases(lines, duration) {
+    const phrases = [];
+    lines.forEach((l, i) => {
+      const words = l.text.split(/\s+/)
+        .map(w => w.replace(/["\\_§/%+#^*$<>]/g, '').replace(/-+/g, '=').replace(/^=+|=+$/g, ''))
+        .filter(Boolean);
+      if (!words.length) return;
+      const next = i + 1 < lines.length ? lines[i + 1].t : (duration || l.t + 8);
+      const chars = words.reduce((s, w) => s + w.length + 1, 0);
+      const end = Math.max(l.t + 0.3, Math.min(next - 0.05, l.t + Math.max(1, chars * 0.1)));
+      let used = 0;
+      const timed = words.map(w => { const t = l.t + (end - l.t) * used / chars; used += w.length + 1; return { t, text: w }; });
+      phrases.push({ t: l.t, end, words: timed });
+    });
+    return phrases;
+  }
+
+  async function findLyrics({ artist, name, duration }) {
+    const clean = s => String(s || '').replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    const url = 'https://lrclib.net/api/search?artist_name=' + encodeURIComponent(clean(artist)) + '&track_name=' + encodeURIComponent(clean(name));
+    let r = null;
+    for (let i = 0; i < 3; i++) {   // a busy server is not the same as "no lyrics"
+      r = await fetch(url);
+      if (r.ok || (r.status !== 429 && r.status < 500)) break;
+      await sleep(2000 * (i + 1));
+    }
+    if (!r.ok) return null;
+    const list = await r.json();
+    const key = s => norm(clean(s)).replace(/[^a-z0-9]/g, '');
+    const a = key(artist), n = key(name);
+    const hits = (Array.isArray(list) ? list : []).filter(x => {
+      if (!x.syncedLyrics || x.instrumental) return false;
+      const xa = key(x.artistName), xn = key(x.trackName);
+      if (!(xa.includes(a) || a.includes(xa)) || !(xn.includes(n) || n.includes(xn))) return false;
+      // another length usually means another recording, and the lyrics would run out of sync
+      return !duration || !x.duration || Math.abs(x.duration - duration) <= 5;
+    }).sort((p, q) => Math.abs((p.duration || 0) - (duration || 0)) - Math.abs((q.duration || 0) - (duration || 0)));
+    return hits.length ? parseLrc(hits[0].syncedLyrics) : null;
+  }
+
+  // keeps what the section already has and merges the new lines in tick order
+  function mergeChartEvents(text, lines) {
+    const re = /\[Events\]\s*\{([\s\S]*?)\}/;
+    const m = text.match(re);
+    const old = m ? m[1].split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [];
+    const all = [...old, ...lines].map((l, i) => [parseInt(l, 10), i, l]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const section = `[Events]\r\n{\r\n${all.map(x => '  ' + x[2]).join('\r\n')}\r\n}`;
+    if (m) return text.replace(re, () => section);
+    const at = text.search(/\[(Easy|Medium|Hard|Expert)/);
+    return at < 0 ? text + section + '\r\n' : text.slice(0, at) + section + '\r\n' + text.slice(at);
+  }
+
+  /* Adds timed lyrics to a chart without them. phrases: [{ t, end, words: [{ t, text }] }] in seconds. */
+  function addLyrics(sng, phrases) {
+    const clock = songClock(sng);
+    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
+    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    if (chart) {
+      const lines = [];
+      for (const p of phrases) {
+        lines.push(`${clock.toTick(p.t)} = E "phrase_start"`);
+        for (const w of p.words) lines.push(`${clock.toTick(w.t)} = E "lyric ${w.text}"`);
+        lines.push(`${clock.toTick(p.end)} = E "phrase_end"`);
+      }
+      chart.data = enc.encode(mergeChartEvents(utf8.decode(chart.data).replace(/^\uFEFF/, ''), lines));
+    } else if (mid) {
+      const m = parseMidi(mid.data);
+      let ev = vocalsTrack(m);
+      if (!ev) { ev = [{ t: 0, meta: 3, data: enc.encode('PART VOCALS') }]; m.tracks.push(ev); }
+      for (const p of phrases) {
+        const a = clock.toTick(p.t), b = Math.max(a + 1, clock.toTick(p.end));
+        ev.push({ t: a, st: 0x90, d1: 105, d2: 100, n: 2, pri: 1 }, { t: b, st: 0x80, d1: 105, d2: 0, n: 2, pri: -1 });
+        for (const w of p.words) ev.push({ t: clock.toTick(w.t), meta: 5, data: enc.encode(w.text) });
+      }
+      ev.forEach((e, i) => { e._i = i; });
+      ev.sort((x, y) => x.t - y.t || (x.pri || 0) - (y.pri || 0) || x._i - y._i);
+      mid.data = writeMidi(m);
+    } else return false;
+    return true;
+  }
+
+  function lyricsFromChart(text, toSec) {
+    const phrases = []; let cur = null;
+    for (const m of text.matchAll(/^\s*(\d+)\s*=\s*E\s+"(phrase_start|phrase_end|lyric (.*))"\s*$/gm)) {
+      const t = toSec(+m[1]);
+      if (m[2] === 'phrase_start') { cur = { t, end: t, words: [] }; phrases.push(cur); }
+      else if (m[2] === 'phrase_end') { if (cur) cur.end = t; cur = null; }
+      else { if (!cur) { cur = { t, end: t, words: [] }; phrases.push(cur); } cur.words.push({ t, text: m[3] }); cur.end = Math.max(cur.end, t + 0.4); }
+    }
+    return phrases.filter(p => p.words.length);
+  }
+
+  function lyricsFromMidi(u8, toSec) {
+    const m = parseMidi(u8), ev = vocalsTrack(m);
+    if (!ev) return [];
+    const spans = []; let open = null;
+    for (const e of ev) {
+      if (e.st === undefined || e.d1 !== 105) continue;
+      const on = (e.st & 0xF0) === 0x90 && e.d2 > 0;
+      if (on) open = e.t; else if (open !== null) { spans.push([open, e.t]); open = null; }
+    }
+    const phrases = spans.map(([a, b]) => ({ t: toSec(a), end: toSec(b), a, b, words: [] }));
+    for (const e of ev) {
+      if (!isLyricEvent(e)) continue;
+      const p = phrases.find(x => e.t >= x.a && e.t < x.b);
+      if (p) p.words.push({ t: toSec(e.t), text: utf8.decode(e.data) });
+    }
+    return phrases.filter(p => p.words.length);
+  }
+
+  /* ---------- drum track from detected hits ---------- */
+  function hasDrums(sng) { return !!sngDifficulties(sng).drums; }
+
+  /* hits: [{ t, lane }] in seconds; lane 0 kick, 1 red, 2 yellow, 3 blue, 4 green. Snapped to 16ths of the song's own tempo map. */
+  function addDrumTrack(sng, hits) {
+    const clock = songClock(sng), grid = clock.res / 4, byTick = new Map();
+    for (const h of hits) {
+      // hi-hats go on 8ths, as charters usually simplify them; the rest on 16ths
+      const step = h.lane === 2 ? grid * 2 : grid;
+      const tick = Math.round(clock.toTick(h.t) / step) * step;
+      if (!byTick.has(tick)) byTick.set(tick, new Set());
+      byTick.get(tick).add(h.lane);
+    }
+    const ticks = [...byTick.keys()].sort((a, b) => a - b);
+    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
+    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    if (chart) {
+      const lines = [];
+      for (const t of ticks) for (const l of [...byTick.get(t)].sort()) {
+        lines.push(`  ${t} = N ${l} 0`);
+        if (l === 2 || l === 4) lines.push(`  ${t} = N ${64 + l} 0`);   // yellow and green are cymbals
+      }
+      chart.data = enc.encode(utf8.decode(chart.data).replace(/\s*$/, '\r\n') + `[ExpertDrums]\r\n{\r\n${lines.join('\r\n')}\r\n}\r\n`);
+    } else if (mid) {
+      const m = parseMidi(mid.data), ev = [{ t: 0, meta: 3, data: enc.encode('PART DRUMS') }], len = Math.max(1, clock.res >> 4);
+      for (const t of ticks) for (const l of byTick.get(t)) {
+        ev.push({ t, st: 0x90, d1: 96 + l, d2: 100, n: 2, pri: 1 }, { t: t + len, st: 0x80, d1: 96 + l, d2: 0, n: 2, pri: -1 });
+      }
+      ev.forEach((e, i) => { e._i = i; });
+      ev.sort((x, y) => x.t - y.t || (x.pri || 0) - (y.pri || 0) || x._i - y._i);
+      m.tracks.push(ev);
+      mid.data = writeMidi(m);
+    } else return false;
+    const d = sng.meta.find(x => x[0] === 'diff_drums');
+    if (d) { if (d[1] === '-1') d[1] = '2'; } else sng.meta.push(['diff_drums', '2']);
+    return true;
+  }
+
+  /* ---------- custom background ---------- */
+  const IMAGE_EXT = /\.(png|jpe?g)$/i, VIDEO_EXT = /\.(mp4|avi|webm|vp8|ogv|mpeg)$/i;
+  /* media: { name, data }. The .sng format only registers background.png/jpg/jpeg and video.mp4/avi/webm/vp8/ogv/mpeg. */
+  function setBackground(sng, media) {
+    const ext = (media.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+    const video = VIDEO_EXT.test(ext);
+    if (!video && !IMAGE_EXT.test(ext)) throw new Error('Formato de fondo no válido. Usa JPG, PNG, MP4, WEBM, AVI, OGV o MPEG.');
+    const base = video ? 'video' : 'background';
+    sng.files = sng.files.filter(f => !new RegExp(`^${base}\\.`, 'i').test(f.name));
+    sng.files.push({ name: base + ext, data: media.data });
+    return sng;
   }
 
   /* ---------- export as a song folder (.zip) for Moonscraper / Clone Hero ---------- */
@@ -621,6 +860,7 @@
   const api = {
     readSng, writeSng, readSngIndex, xorData, parseMidi, writeMidi, reduceChartText, reduceMidi, processSng, sngDifficulties, songTimeline,
     levelsFor, DEFAULT_KNOBS, makeZip, sngToZip,
+    songClock, hasLyrics, parseLrc, lrcToPhrases, findLyrics, addLyrics, hasDrums, addDrumTrack, setBackground,
     encoreSearch, fetchSng, findSongs, pickBest, nativeDiffs, hasNative, canFill, fileName, summarize,
     INST_LABEL, LEVEL_LABEL, FILES,
   };
