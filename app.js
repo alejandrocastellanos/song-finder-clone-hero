@@ -682,6 +682,8 @@ function pickAudio(file) {
   const [a, ...rest] = base.split(' - ');
   if (rest.length) { $('#acArtist').value = a.trim(); $('#acName').value = rest.join(' - ').trim(); }
   else { $('#acName').value = base.trim(); }
+  // a new song starts without the lyrics and image of the previous one
+  $('#acLrc').value = ''; $('#acImage').value = ''; $('#acImageName').textContent = 'Elegir imagen o video';
   $('#acGo').disabled = false;
 }
 const createdLevels = onStep => prepareFrom(created.song, Promise.resolve(created.bytes), onStep);
@@ -697,13 +699,28 @@ async function createFromAudio() {
     });
     Analytics.track('chart_from_audio', { song: `${artist} - ${name}` });
     created = { ...r, song: { md5: 'local-' + Date.now(), artist, name } };
+    const md5 = created.song.md5;
+    const say = t => { $('#acProgText').textContent = t; };
+    // lyrics pasted by hand win over the search
+    const pasted = CHB.parseLrc($('#acLrc').value);
+    if (pasted.length) {
+      const sng = CHB.readSng(r.bytes);
+      if (CHB.addLyrics(sng, CHB.lrcToPhrases(pasted, r.duration))) created.bytes = CHB.writeSng(sng);
+    } else if ($('#acLyrics').checked) askedFor[md5] = { lyrics: true };
+    if ($('#acImage').files[0]) await chooseBackground($('#acImage').files[0], md5);
+    const done = await createdLevels(say);
+    say('¡Listo!');
+    const lyricText = pasted.length ? '✔ la que pegaste' : done.hasLyrics ? '✔ agregada' : $('#acLyrics').checked ? '✖ no encontrada' : '✖ sin letra';
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     $('#acTitle').textContent = `${artist} – ${name}`;
     $('#acTiles').innerHTML = `
       <div class="tile"><b>${Math.round(r.bpm)}</b><span>BPM detectados</span></div>
       <div class="tile"><b>${r.notes}</b><span>notas en Experto</span></div>
       <div class="tile"><b>${(r.notes / r.duration).toFixed(1)}</b><span>notas por segundo</span></div>
-      <div class="tile"><b>${secs} s</b><span>en crearlo</span></div>`;
+      <div class="tile"><b>${secs} s</b><span>en crearlo</span></div>
+      <div class="tile"><b class="tile-small">${lyricText}</b><span>🎤 letra</span></div>
+      <div class="tile"><b class="tile-small">${songBg[md5] ? '✔ ' + esc(songBg[md5].name.slice(0, 20)) : '✖ sin imagen'}</b><span>🖼 imagen de fondo</span></div>`;
+    $('#acImageNow').innerHTML = bgButton(md5);
     $('#acResult').classList.remove('hidden');
     FX.sparks(60); FX.strum();
   } catch (e) {
@@ -811,6 +828,7 @@ $('#drop').addEventListener('dragover', e => { e.preventDefault(); $('#drop').cl
 $('#drop').addEventListener('dragleave', () => $('#drop').classList.remove('over'));
 $('#drop').addEventListener('drop', e => { e.preventDefault(); $('#drop').classList.remove('over'); pickAudio(e.dataTransfer.files[0]); });
 $('#acGo').onclick = createFromAudio;
+$('#acImage').onchange = e => { $('#acImageName').textContent = e.target.files[0] ? e.target.files[0].name : 'Elegir imagen o video'; };
 $('#acPreview').onclick = previewCreated;
 $('#acDl').onclick = saveCreated;
 $('#acEdit').onclick = () => created && exportSong(created.song, async () => createdLevels());

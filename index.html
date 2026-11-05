@@ -323,6 +323,10 @@
   .ic.wait { color: var(--dim); border-color: transparent; padding-left: 0; }
   .period.on { border-color: var(--fire2); color: var(--fire3); }
   @media (max-width: 860px) { .prow { grid-template-columns: 32px 1fr; } .prow > .row { grid-column: 2; } }
+  .tile b.tile-small { font-family: var(--body); font-weight: 700; font-size: 17px; line-height: 1.3; }
+  .ac-lrc { margin-top: 12px; color: var(--muted); font-size: 14px; }
+  .ac-lrc summary { cursor: pointer; font-weight: 600; }
+  .ac-lrc textarea { width: 100%; margin-top: 6px; padding: 10px; background: #0e0c10; color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: 14px/1.5 ui-monospace, Consolas, monospace; }
   .knobs-info { margin-top: 12px; font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .knobs-info b { color: #9fd4ff; font-weight: 600; }
   .pv-stats { color: var(--muted); font-size: 14px; }
@@ -499,15 +503,24 @@
           <option value="3">Muchas notas</option>
         </select>
         <label class="chk"><input type="checkbox" id="acDrums" checked> 🥁 Crear batería</label>
-        <button class="primary" id="acGo" disabled>Crear chart</button>
       </div>
+      <div class="row" style="margin-top:12px">
+        <label class="chk"><input type="checkbox" id="acLyrics" checked> 🎤 Buscar la letra</label>
+        <label class="btn-file">🖼 <span id="acImageName">Elegir imagen o video</span><input type="file" id="acImage" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden></label>
+      </div>
+      <details class="ac-lrc">
+        <summary>¿No encuentra la letra? Pégala con sus tiempos</summary>
+        <p class="sub">Formato LRC: cada línea con su tiempo, por ejemplo <code>[00:21.50] Aquí va la línea</code>. Hay editores gratis de LRC en internet para marcar los tiempos mientras suena la canción. Si pegas algo aquí, se usa esto en vez de buscar.</p>
+        <textarea id="acLrc" rows="6" placeholder="[00:21.50] Primera línea&#10;[00:25.10] Segunda línea" spellcheck="false"></textarea>
+      </details>
+      <div class="row" style="margin-top:14px"><button class="primary" id="acGo" disabled>Crear chart</button></div>
       <div class="ac-prog hidden" id="acProg"><span id="acProgText"></span><div class="qtrack"><i id="acProgBar"></i></div></div>
     </div>
     <div class="card hidden" id="acResult">
       <h2 id="acTitle"></h2>
       <div class="tiles" id="acTiles"></div>
       <p class="sub">Míralo en la vista previa: puedes cambiar de nivel y usar las perillas. Si no te convence, prueba otra opción de "notas" y vuelve a crearlo, o edítalo en Moonscraper.</p>
-      <div class="row"><button class="primary" id="acPreview">▶ Ver y ajustar</button><button id="acDl">Descargar</button><button id="acEdit">✏️ Editar en Moonscraper</button></div>
+      <div class="row"><button class="primary" id="acPreview">▶ Ver y ajustar</button><button id="acDl">Descargar</button><button id="acEdit">✏️ Editar en Moonscraper</button><span id="acImageNow"></span></div>
     </div>
   </section>
 </main>
