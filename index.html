@@ -3,8 +3,42 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CH Buscador</title>
-<meta name="description" content="Busca canciones para Clone Hero y crea automáticamente los niveles Fácil, Medio y Difícil que les falten.">
+<title>CH Buscador · Descargar canciones para Clone Hero con Fácil, Medio y Difícil</title>
+<meta name="description" content="Descarga canciones para Clone Hero gratis: busca en Chorus Encore por canción, artista o género y, si al chart le falta Fácil, Medio o Difícil, se crea solo. Packs de rock, metal, rock en español y más.">
+<link rel="canonical" href="https://alejandrocastellanos.github.io/song-finder-clone-hero/">
+<link rel="alternate" hreflang="es" href="https://alejandrocastellanos.github.io/song-finder-clone-hero/">
+<link rel="alternate" hreflang="en" href="https://alejandrocastellanos.github.io/song-finder-clone-hero/?lang=en">
+<link rel="alternate" hreflang="x-default" href="https://alejandrocastellanos.github.io/song-finder-clone-hero/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="CH Buscador">
+<meta property="og:title" content="CH Buscador · Canciones para Clone Hero con todos los niveles">
+<meta property="og:description" content="Busca cualquier canción para Clone Hero y, si no trae tu nivel, te lo creamos. Gratis, en el navegador.">
+<meta property="og:url" content="https://alejandrocastellanos.github.io/song-finder-clone-hero/">
+<meta property="og:image" content="https://alejandrocastellanos.github.io/song-finder-clone-hero/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="CH Buscador: autopista de notas de Clone Hero con el buscador">
+<meta property="og:locale" content="es_LA">
+<meta property="og:locale:alternate" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "CH Buscador",
+  "alternateName": ["CH Song Finder", "Buscador de canciones para Clone Hero"],
+  "url": "https://alejandrocastellanos.github.io/song-finder-clone-hero/",
+  "image": "https://alejandrocastellanos.github.io/song-finder-clone-hero/og-image.jpg",
+  "description": "Buscador gratuito de canciones para Clone Hero: descarga charts de Chorus Encore y crea los niveles Fácil, Medio y Difícil que les falten, la batería y la letra.",
+  "applicationCategory": "GameApplication",
+  "operatingSystem": "Windows, macOS, Linux, Android, iOS (navegador web)",
+  "inLanguage": ["es", "en"],
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "featureList": ["Buscar canciones para Clone Hero por canción, artista o género", "Crear los niveles Fácil, Medio y Difícil que falten", "Crear la batería desde el audio", "Agregar la letra con tiempos", "Packs de canciones por género y artista", "Crear un chart desde un audio"],
+  "author": { "@type": "Person", "name": "Alejo Castellanos", "url": "https://github.com/alejandrocastellanos" }
+}
+</script>
 <meta name="theme-color" content="#0a090b">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
@@ -349,6 +383,15 @@
   .changes li b { color: #9fd4ff; font-weight: 600; }
   .pv-stats { color: var(--muted); font-size: 14px; }
 
+  /* ---------- frequently asked questions: plain text people (and search engines) can read ---------- */
+  .faq { max-width: 860px; margin: 40px auto 24px; padding: 0 4px; }
+  .faq h2 { font-family: var(--display); font-weight: 400; letter-spacing: 1px; font-size: 26px; color: var(--fire3); margin: 0 0 12px; }
+  .faq details { border-top: 1px solid var(--line); }
+  .faq details:last-child { border-bottom: 1px solid var(--line); }
+  .faq summary { cursor: pointer; padding: 12px 2px; font-weight: 600; color: var(--text); }
+  .faq summary:hover { color: var(--fire3); }
+  .faq p { margin: 0 0 14px; color: var(--muted); line-height: 1.55; max-width: 72ch; }
+  a.pack { text-decoration: none; font: 600 15px var(--body); cursor: pointer; transition: transform .08s, box-shadow .2s; }
   footer { text-align: center; color: var(--dim); font-size: 13px; padding: 0 16px 90px; }
   footer a { color: var(--muted); }
 
@@ -418,7 +461,7 @@
 <body>
 <header class="stage">
   <div class="topbar"><span class="lang" role="group" aria-label="Idioma / Language" data-no-i18n><button data-lang="es" title="Español">ES</button><button data-lang="en" title="English">EN</button></span><button id="soundBtn" title="Sonidos de guitarra al buscar y al terminar descargas">🔇 Sonido</button></div>
-  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.6.1</button></div>
+  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.7.0</button></div>
   <p class="tagline">Busca cualquier canción para Clone Hero · <b>si no trae tu nivel, te lo creamos</b></p>
   <div class="highway" aria-hidden="true">
     <div class="road">
@@ -478,6 +521,12 @@
       <h2>✨ Mejoras</h2>
       <p class="sub" style="margin-top:0">Todo lo que ha cambiado desde que se lanzó CH Buscador, lo más nuevo primero. Muchas de estas mejoras salieron de comentarios de la comunidad: ¡gracias!</p>
       <div class="changes">
+        <div>
+          <h3>22 de noviembre de 2026 <small>v1.7.0</small></h3>
+          <ul>
+            <li><b>Mejor posicionada en Google:</b> título y descripción pensados para quien busca canciones para Clone Hero, vista previa al compartir el enlace, preguntas frecuentes y una página propia para cada pack y cada búsqueda.</li>
+          </ul>
+        </div>
         <div>
           <h3>21 de noviembre de 2026 <small>v1.6.1</small></h3>
           <ul>
@@ -665,6 +714,16 @@
       <p class="sub">Míralo en la vista previa: puedes cambiar de nivel y usar las perillas. Si no te convence, prueba otra opción de "notas" y vuelve a crearlo, o edítalo en Moonscraper.</p>
       <div class="row"><button class="primary" id="acPreview">▶ Ver y ajustar</button><button id="acDl">Descargar</button><button id="acEdit">✏️ Editar en Moonscraper</button><span id="acImageNow"></span></div>
     </div>
+  </section>
+  <section class="faq" id="faq" aria-labelledby="faqTitle">
+    <h2 id="faqTitle">Canciones para Clone Hero: preguntas frecuentes</h2>
+    <details><summary>¿Dónde descargo canciones para Clone Hero?</summary><p>Aquí mismo: escribe una canción, un artista o un género y CH Buscador busca entre los miles de charts de Chorus Encore, la biblioteca más grande de canciones para Clone Hero hecha por la comunidad. Con un clic la descargas lista para jugar, o eliges varias y las bajas juntas.</p></details>
+    <details><summary>¿Cómo instalo las canciones en Clone Hero?</summary><p>Guarda la canción (el archivo .sng o la carpeta) dentro de tu carpeta Songs. Luego, en Clone Hero, ve a Settings → General → Scan Songs y aparecerá en la lista. En Chrome, Edge u Opera la web puede guardarlas directo en la carpeta Songs.</p></details>
+    <details><summary>¿Qué hago si una canción no trae Fácil, Medio o Difícil?</summary><p>Muchos charts solo vienen en Experto. CH Buscador crea automáticamente los niveles Fácil, Medio y Difícil que falten a partir del Experto, para guitarra, bajo, batería y teclado. Puedes probarlos antes en la vista previa jugable y ajustar cuántas notas tienen.</p></details>
+    <details><summary>¿Puedo agregar batería y letra a una canción que no las trae?</summary><p>Sí. Al descargar, la web puede crear la batería desde el audio de la canción y buscar la letra con sus tiempos para que salga en pantalla mientras tocas.</p></details>
+    <details><summary>¿Cómo hago un chart de una canción que nadie ha hecho?</summary><p>Usa Crear desde audio: sube un MP3, OGG, WAV o FLAC y la app escucha la canción, encuentra el pulso y arma un chart jugable con los cuatro niveles. También puedes sacar solo el mapa de tempo para poner las notas tú en Moonscraper.</p></details>
+    <details><summary>¿Qué es un archivo .sng?</summary><p>Es el formato de canción de Clone Hero desde la versión 1.1: guarda en un solo archivo el chart, el audio, la portada y la configuración. Si tu Clone Hero es más antiguo, activa Guardar como carpeta en los ajustes de descarga.</p></details>
+    <details><summary>¿Es gratis? ¿Funciona en el celular?</summary><p>Es gratis y funciona en el navegador, sin instalar nada: en Windows, Mac, Linux y también en el celular. Los charts son obra de sus autores en Chorus Encore.</p></details>
   </section>
 </main>
 

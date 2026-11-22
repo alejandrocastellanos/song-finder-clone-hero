@@ -6,6 +6,15 @@ window.I18N = (() => {
   const KEY = 'chb-lang';
   let lang = null;
   try { lang = localStorage.getItem(KEY); } catch { }
+  // ?lang=en is the English address search engines index; it also wins over what was chosen before
+  const asked = new URLSearchParams(location.search).get('lang');
+  if (asked === 'es' || asked === 'en') { lang = asked; try { localStorage.setItem(KEY, lang); } catch { } }
+  // the English home page is its own address, not a copy of the Spanish one
+  if (asked === 'en' && [...new URLSearchParams(location.search).keys()].length === 1) {
+    const home = location.origin + location.pathname + '?lang=en';
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', home);
+    document.querySelector('meta[property="og:url"]')?.setAttribute('content', home);
+  }
   if (lang !== 'es' && lang !== 'en') lang = /^es\b/i.test(navigator.language || 'es') ? 'es' : 'en';
 
   /* ---------- whole texts ---------- */
@@ -265,6 +274,32 @@ window.I18N = (() => {
     '🧪 Crear chart desde audio': '🧪 Create a chart from audio', '(experimental).': '(experimental).',
     'También se puede usar desde Claude Code y la línea de comandos.': 'It can also be used from Claude Code and the command line.',
 
+    // page title, descriptions and link previews
+    'CH Buscador · Descargar canciones para Clone Hero con Fácil, Medio y Difícil': 'CH Song Finder · Download Clone Hero songs with Easy, Medium and Hard',
+    'Descarga canciones para Clone Hero gratis: busca en Chorus Encore por canción, artista o género y, si al chart le falta Fácil, Medio o Difícil, se crea solo. Packs de rock, metal, rock en español y más.': 'Download Clone Hero songs for free: search Chorus Encore by song, artist or genre and, if the chart is missing Easy, Medium or Hard, it is created for you. Packs of rock, metal, Spanish rock and more.',
+    'CH Buscador · Canciones para Clone Hero con todos los niveles': 'CH Song Finder · Clone Hero songs with every level',
+    'Busca cualquier canción para Clone Hero y, si no trae tu nivel, te lo creamos. Gratis, en el navegador.': "Find any song for Clone Hero and, if it's missing your level, we make it. Free, in the browser.",
+    'CH Buscador: autopista de notas de Clone Hero con el buscador': 'CH Song Finder: Clone Hero note highway with the search',
+
+    // frequently asked questions
+    'Canciones para Clone Hero: preguntas frecuentes': 'Clone Hero songs: frequently asked questions',
+    '¿Dónde descargo canciones para Clone Hero?': 'Where do I download songs for Clone Hero?',
+    'Aquí mismo: escribe una canción, un artista o un género y CH Buscador busca entre los miles de charts de Chorus Encore, la biblioteca más grande de canciones para Clone Hero hecha por la comunidad. Con un clic la descargas lista para jugar, o eliges varias y las bajas juntas.': 'Right here: type a song, an artist or a genre and CH Song Finder searches the thousands of charts on Chorus Encore, the largest community-made library of Clone Hero songs. One click downloads it ready to play, or pick several and download them together.',
+    '¿Cómo instalo las canciones en Clone Hero?': 'How do I install songs in Clone Hero?',
+    'Guarda la canción (el archivo .sng o la carpeta) dentro de tu carpeta Songs. Luego, en Clone Hero, ve a Settings → General → Scan Songs y aparecerá en la lista. En Chrome, Edge u Opera la web puede guardarlas directo en la carpeta Songs.': 'Save the song (the .sng file or the folder) inside your Songs folder. Then, in Clone Hero, go to Settings → General → Scan Songs and it will show up in the list. In Chrome, Edge or Opera the site can save them straight to the Songs folder.',
+    '¿Qué hago si una canción no trae Fácil, Medio o Difícil?': "What if a song doesn't have Easy, Medium or Hard?",
+    'Muchos charts solo vienen en Experto. CH Buscador crea automáticamente los niveles Fácil, Medio y Difícil que falten a partir del Experto, para guitarra, bajo, batería y teclado. Puedes probarlos antes en la vista previa jugable y ajustar cuántas notas tienen.': 'Many charts only come in Expert. CH Song Finder automatically creates the missing Easy, Medium and Hard levels from Expert, for guitar, bass, drums and keys. You can try them first in the playable preview and adjust how many notes they have.',
+    '¿Puedo agregar batería y letra a una canción que no las trae?': "Can I add drums and lyrics to a song that doesn't have them?",
+    'Sí. Al descargar, la web puede crear la batería desde el audio de la canción y buscar la letra con sus tiempos para que salga en pantalla mientras tocas.': 'Yes. When downloading, the site can create drums from the song audio and find timed lyrics so they show on screen while you play.',
+    '¿Cómo hago un chart de una canción que nadie ha hecho?': 'How do I chart a song nobody has charted?',
+    'Usa Crear desde audio: sube un MP3, OGG, WAV o FLAC y la app escucha la canción, encuentra el pulso y arma un chart jugable con los cuatro niveles. También puedes sacar solo el mapa de tempo para poner las notas tú en Moonscraper.': 'Use Create from audio: upload an MP3, OGG, WAV or FLAC and the app listens to the song, finds the beat and builds a playable chart with all four levels. You can also get just the tempo map to place the notes yourself in Moonscraper.',
+    '¿Qué es un archivo .sng?': 'What is a .sng file?',
+    'Es el formato de canción de Clone Hero desde la versión 1.1: guarda en un solo archivo el chart, el audio, la portada y la configuración. Si tu Clone Hero es más antiguo, activa Guardar como carpeta en los ajustes de descarga.': "It is Clone Hero's song format since version 1.1: it keeps the chart, audio, album art and settings in a single file. If your Clone Hero is older, turn on Save as folder in the download settings.",
+    '¿Es gratis? ¿Funciona en el celular?': 'Is it free? Does it work on phones?',
+    'Es gratis y funciona en el navegador, sin instalar nada: en Windows, Mac, Linux y también en el celular. Los charts son obra de sus autores en Chorus Encore.': 'It is free and works in the browser, with nothing to install: on Windows, Mac, Linux and phones too. The charts are the work of their authors on Chorus Encore.',
+    'Mejor posicionada en Google:': 'Easier to find on Google:',
+    'título y descripción pensados para quien busca canciones para Clone Hero, vista previa al compartir el enlace, preguntas frecuentes y una página propia para cada pack y cada búsqueda.': 'title and description made for people looking for Clone Hero songs, a preview when the link is shared, frequently asked questions and a page of its own for each pack and each search.',
+
     // footer
     'Canciones de': 'Songs from',
     '· los charts son obra de sus autores · los niveles creados son automáticos': '· the charts are the work of their authors · created levels are automatic',
@@ -306,6 +341,10 @@ window.I18N = (() => {
     [/^Las (\d+) mejores versiones que encontré de (.+)$/, (n, a) => `The ${n} best versions I found by ${a}`],
     [/^Pack (.+) para Clone Hero$/, p => `${T(p)} pack for Clone Hero`],
     [/^Canciones de (.+) para Clone Hero$/, q => `${q} songs for Clone Hero`],
+    [/^(.+) · CH Buscador$/, x => `${T(x)} · CH Song Finder`],
+    [/^(.+): pack de canciones para Clone Hero$/, x => `${T(x)}: Clone Hero song pack`],
+    [/^(.+)\. (\d+) canciones para Clone Hero listas para descargar, con Fácil, Medio y Difícil\.$/, (d, n) => `${T(d)}. ${n} Clone Hero songs ready to download, with Easy, Medium and Hard.`],
+    [/^Canciones de (.+) para Clone Hero listas para descargar\. Si les falta Fácil, Medio o Difícil, se crean solas\.$/, q => `${q} songs for Clone Hero ready to download. If they're missing Easy, Medium or Hard, they're created for you.`],
     [/^(\d+) de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre) de (\d{4})$/, (d, m, y) => `${MONTHS[m]} ${d}, ${y}`],
     // library log
     [/^(OK {9}|ARREGLADA {2})(.+?) → (.+)$/, (k, l, x) => `${k.startsWith('OK') ? 'OK         ' : 'FIXED      '}${l} → ${note(x)}`],
@@ -344,7 +383,7 @@ window.I18N = (() => {
   /* ---------- applying it to the page ---------- */
   // song names, artists and lyrics stay as they are
   const KEEP = '.pv-lyrics, .song .title, .song .artist, .pv-title, .pv-artist, .pt > b, .missing b, .missing small, #acTitle, textarea, script, style, [data-no-i18n]';
-  const ATTRS = ['title', 'placeholder', 'aria-label'];
+  const ATTRS = ['title', 'placeholder', 'aria-label', 'content'];
   const LETTERS = { F: 'E', M: 'M', D: 'H', X: 'X' };
   const srcText = new WeakMap(), shownText = new WeakMap(), srcAttr = new WeakMap(), shownAttr = new WeakMap();
 

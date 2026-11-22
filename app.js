@@ -460,6 +460,7 @@ async function doSearch(args, limit, push = true) {
   const text = args.query || args.artist || args.genre;
   rememberSearch(text);
   if (push) { setUrl({ q: text, por: Object.keys(args)[0] }); Analytics.track('search', { search_term: text }); }
+  pageMeta(`Canciones de ${text} para Clone Hero`, `Canciones de ${text} para Clone Hero listas para descargar. Si les falta Fácil, Medio o Difícil, se crean solas.`, { q: text, por: Object.keys(args)[0] });
   try {
     const items = await findSongs({ ...args, want: want(), limit, onlyNative: $('#filter').value === 'native' });
     state = { args, limit, items, sel: more ? state.sel : new Set(), done: items.length < limit };
@@ -523,12 +524,12 @@ function renderPacks() {
   $('#packGrid').innerHTML = groups.map(g => `
     <h2 class="pack-group">${esc(g)}</h2>
     <div class="packs">${PACKS.filter(p => (p.group || 'Listas especiales') === g).map(p => `
-      <button class="pack" data-pack="${p.id}" style="--c1:${p.colors[0]};--c2:${p.colors[1]}">
+      <a class="pack" href="?pack=${p.id}" data-pack="${p.id}" style="--c1:${p.colors[0]};--c2:${p.colors[1]}">
         <span class="pack-emoji">${p.emoji}</span>
         <span class="pack-title">${esc(p.title)}</span>
         <span class="pack-desc">${esc(p.desc)}</span>
         <span class="pack-count">${p.songs.length} canciones</span>
-      </button>`).join('')}</div>`).join('');
+      </a>`).join('')}</div>`).join('');
 }
 function openPack(id, push = true) {
   const p = PACKS.find(x => x.id === id);
@@ -540,6 +541,7 @@ function openPack(id, push = true) {
   $('#packGrid').classList.add('hidden');
   $('#packDetail').classList.remove('hidden');
   $('#packDetail').style.setProperty('--c1', p.colors[0]); $('#packDetail').style.setProperty('--c2', p.colors[1]);
+  pageMeta(`${p.title}: pack de canciones para Clone Hero`, `${p.desc}. ${songs.length} canciones para Clone Hero listas para descargar, con Fácil, Medio y Difícil.`, { pack: id });
   $('#packHead').innerHTML = `<span class="pack-emoji">${p.emoji}</span><div><h2>${esc(p.title)}</h2><p class="sub">${esc(p.desc)} · ${songs.length} canciones</p></div>`;
   $('#packList').innerHTML = songs.map((s, i) => `
     <div class="prow" data-md5="${s.md5}">
@@ -552,7 +554,7 @@ function openPack(id, push = true) {
   $('#packDl').onclick = () => { Analytics.track('pack_download', { pack: id }); enqueue(songs); };
   $('#packShare').onclick = () => share({ pack: id }, `Pack ${p.title} para Clone Hero`);
 }
-function closePack() { $('#packGrid').classList.remove('hidden'); $('#packDetail').classList.add('hidden'); setUrl({}); }
+function closePack() { $('#packGrid').classList.remove('hidden'); $('#packDetail').classList.add('hidden'); setUrl({}); pageMeta(); }
 
 /* ---------- suggestions, recent searches, sharing ---------- */
 const POPULAR = ['Metallica', 'Soda Stereo', 'Queen', 'AC/DC', 'Nirvana', "Guns N' Roses", 'Los Prisioneros', 'Mägo de Oz', 'Red Hot Chili Peppers', 'Selena'];
@@ -566,6 +568,15 @@ function renderSuggestions() {
   $('#sugs').innerHTML = [...recent, ...POPULAR.filter(p => !recent.includes(p))].map(x => `<option value="${esc(x)}">`).join('');
   $('#chips').innerHTML = (recent.length ? `<span class="chips-l">Recientes:</span>${recent.slice(0, 4).map(x => `<button class="chip" data-q="${esc(x)}">${esc(x)}</button>`).join('')}` : '')
     + `<span class="chips-l">Populares:</span>${POPULAR.slice(0, 7).map(x => `<button class="chip hot" data-q="${esc(x)}">${esc(x)}</button>`).join('')}`;
+}
+// title, description and canonical address of what's on screen (a search or a pack), for search engines and shared links
+const SITE = 'https://alejandrocastellanos.github.io/song-finder-clone-hero/';
+const HOME_META = { title: document.title, desc: document.querySelector('meta[name="description"]').content };
+function pageMeta(title, desc, params) {
+  document.title = title ? `${title} · CH Buscador` : HOME_META.title;
+  document.querySelector('meta[name="description"]').content = desc || HOME_META.desc;
+  const qs = params ? new URLSearchParams(params).toString() : '';
+  document.querySelector('link[rel="canonical"]').href = SITE + (qs ? '?' + qs : '');
 }
 function setUrl(params) {
   const u = new URL(location.href);
@@ -913,7 +924,12 @@ $('#topList').onclick = e => {
 };
 $('#dlSel').onclick = () => { enqueue(state.items.filter(s => state.sel.has(s.md5))); state.sel.clear(); render(); };
 
-$('#packGrid').onclick = e => { const b = e.target.closest('.pack'); if (b) { FX.pick(); openPack(b.dataset.pack); } };
+$('#packGrid').onclick = e => {
+  const b = e.target.closest('.pack'); if (!b) return;
+  // a real link so search engines find each pack; here it opens in place
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+  e.preventDefault(); FX.pick(); openPack(b.dataset.pack);
+};
 $('#packBack').onclick = closePack;
 $('#packList').onclick = e => {
   const row = e.target.closest('.prow'); if (!row || !e.target.closest('.pv-btn')) return;

@@ -28,4 +28,5 @@ Cuál subir: **PARCHE** para correcciones sin funciones nuevas; **MENOR** para f
 - `autochart.js`: experimental, crea un chart Expert desde un audio (flujo espectral para los golpes, seguimiento de pulso por programación dinámica, tono por HPS para los botones). También crea batería desde el audio. Solo navegador.
 - `analytics.js`: Google Analytics 4; no hace nada hasta poner `GA_ID` y solo carga si la persona acepta.
 - `community.js` + `supabase/schema.sql`: contador, lo más descargado y valoraciones en Supabase; solo escribe desde la página publicada.
+- SEO: título, descripción, Open Graph (`og-image.jpg`) y datos estructurados en el `<head>` de `index.html`; preguntas frecuentes al final de la página; `pageMeta()` en `app.js` pone título y descripción de cada búsqueda y pack. **Si agregas o cambias packs, actualiza `sitemap.xml`.**
 - `manifest.webmanifest`, `sw.js`, `icons/`: para instalarla como app (PWA).
