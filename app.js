@@ -34,6 +34,7 @@ async function ensurePermission() {
 }
 function showFolder() {
   $('#pickFolder').classList.toggle('hidden', !canPickDir);
+  showSettingsSummary();
   if (canPickDir) {
     $('#folderLabel').innerHTML = dirHandle
       ? `Carpeta de destino: <b>${esc(dirHandle.name)}</b>`
@@ -115,7 +116,8 @@ function showKnobs() {
 // one line with what the download settings say, shown while they're folded
 function showSettingsSummary() {
   const lv = want().map(k => ({ E: 'Fácil', M: 'Medio', H: 'Difícil' }[k]));
-  const parts = [lv.length ? lv.join(', ') : 'ningún nivel'];
+  const where = dirHandle ? `📁 ${dirHandle.name}` : canPickDir ? '📁 carpeta: se pide al descargar' : '📁 se guarda en Descargas';
+  const parts = [where, lv.length ? lv.join(', ') : 'ningún nivel'];
   if ($('#allInst').checked) parts.push('todos los instrumentos');
   if ($('#addLyrics').checked) parts.push('letra');
   if ($('#addDrums').checked) parts.push('batería');
@@ -957,9 +959,8 @@ $('#soundBtn').onclick = () => {
   if (p && p.drums !== undefined) $('#addDrums').checked = p.drums;
   if (p && p.folder !== undefined) $('#asFolder').checked = p.folder;
   showKnobs(); showSettingsSummary(); Analytics.init(); loadCommunity();
-  // folded on phones so the search shows up first; whatever the person chooses afterwards is remembered
-  const folded = store.get('settingsOpen', null);
-  $('#setMore').open = folded === null ? !matchMedia('(max-width: 640px)').matches : folded;
+  // folded by default so the search is the first thing on screen; whatever the person chooses afterwards is remembered
+  $('#setMore').open = store.get('settingsOpen', false) === true;
   $('#setMore').addEventListener('toggle', () => store.set('settingsOpen', $('#setMore').open));
   $('#soundBtn').classList.toggle('on', FX.soundOn);
   $('#soundBtn').textContent = FX.soundOn ? '🔊 Sonido' : '🔇 Sonido';

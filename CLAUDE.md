@@ -13,7 +13,7 @@ La versión sigue Semantic Versioning (MAYOR.MENOR.PARCHE) y está en tres lugar
 - `sw.js`: `const CACHE = 'chb-vX.Y.Z'` (así cada versión renueva la caché de la app).
 - `index.html`, sección ✨ Mejoras: una entrada con la fecha y `<small>vX.Y.Z</small>`, lo más nuevo primero, en frases cortas para jugadores.
 
-Cuál subir: **PARCHE** para correcciones sin funciones nuevas; **MENOR** para funciones o cambios visibles que no rompen nada; **MAYOR** si cambia algo que la gente ya usaba de forma incompatible (formato de archivos, quitar una función importante). Historial: 1.0.0 (30 oct 2026, lanzamiento), 1.1.0 (4 nov), 1.2.0 (6 nov), 1.3.0 y 1.3.1 (21 nov), 1.4.0 (21 nov, diseño).
+Cuál subir: **PARCHE** para correcciones sin funciones nuevas; **MENOR** para funciones o cambios visibles que no rompen nada; **MAYOR** si cambia algo que la gente ya usaba de forma incompatible (formato de archivos, quitar una función importante). Historial: 1.0.0 (30 oct 2026, lanzamiento), 1.1.0 (4 nov), 1.2.0 (6 nov), 1.3.0 y 1.3.1 (21 nov), 1.4.0 (21 nov, diseño), 1.5.0 (21 nov, ajustes de descarga en barra plegada).
 
 ## Estructura
 

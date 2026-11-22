@@ -371,7 +371,9 @@
   .song .dl:hover:not(:disabled) { box-shadow: 0 0 0 1px #7a2100, 0 0 22px rgba(255, 110, 0, .65), inset 0 1px 0 rgba(255,255,255,.5); }
   .song .bg-btn { background: transparent; font-size: 13px; padding: 8px 12px; color: var(--muted); }
   /* download settings fold away; the summary line says what's chosen */
-  .settings-more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; color: var(--muted); font-size: 14px; }
+  /* a slim bar while folded, so the search stays the main thing on screen */
+  .settings-bar { padding: 12px 18px; }
+  .settings-more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 14px; }
   .settings-more > summary::-webkit-details-marker { display: none; }
   .settings-more > summary::before { content: "▸"; color: var(--fire2); transition: transform .15s; }
   .settings-more[open] > summary::before { transform: rotate(90deg); }
@@ -408,7 +410,7 @@
 <body>
 <header class="stage">
   <div class="topbar"><button id="soundBtn" title="Sonidos de guitarra al buscar y al terminar descargas">🔇 Sonido</button></div>
-  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.4.0</button></div>
+  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.5.0</button></div>
   <p class="tagline">Busca cualquier canción para Clone Hero · <b>si no trae tu nivel, te lo creamos</b></p>
   <div class="highway" aria-hidden="true">
     <div class="road">
@@ -434,17 +436,17 @@
     <button id="tab-mejoras">✨ Mejoras</button>
   </div>
 
-  <div class="card" id="settings">
-    <div class="row" style="justify-content:space-between">
+  <div class="card settings-bar" id="settings">
+    <input type="file" id="songBgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>
+    <details class="settings-more" id="setMore">
+    <summary><b>⚙️ Ajustes de descarga</b> <span class="set-sum" id="setSum"></span></summary>
+    <div class="row" style="justify-content:space-between;margin-top:14px">
       <div class="folder">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         <span id="folderLabel">Carpeta de destino: <b>ninguna</b></span>
       </div>
       <button id="pickFolder">Elegir carpeta Songs</button>
     </div>
-    <input type="file" id="songBgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>
-    <details class="settings-more" id="setMore" open>
-    <summary><b>⚙️ Ajustes de descarga</b> <span class="set-sum" id="setSum"></span></summary>
     <div class="row" style="margin-top:12px">
       <span class="sub">Niveles que necesito:</span>
       <label class="chk lv-E"><input type="checkbox" id="needE" checked> Fácil</label>
@@ -468,6 +470,12 @@
       <h2>✨ Mejoras</h2>
       <p class="sub" style="margin-top:0">Todo lo que ha cambiado desde que se lanzó CH Buscador, lo más nuevo primero. Muchas de estas mejoras salieron de comentarios de la comunidad: ¡gracias!</p>
       <div class="changes">
+        <div>
+          <h3>21 de noviembre de 2026 <small>v1.5.0</small></h3>
+          <ul>
+            <li><b>Ajustes de descarga en una barra plegada:</b> la carpeta, los niveles, la letra, la batería y las perillas quedan en una sola línea con su resumen, y se abren con un clic. Así lo primero que ves es el buscador.</li>
+          </ul>
+        </div>
         <div>
           <h3>21 de noviembre de 2026 <small>v1.4.0</small></h3>
           <ul>
