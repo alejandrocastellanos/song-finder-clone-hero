@@ -11,6 +11,7 @@ window.I18N = (() => {
   /* ---------- whole texts ---------- */
   const EN = {
     // header, tabs
+    'CH Buscador': 'CH Song Finder',
     '🔇 Sonido': '🔇 Sound', '🔊 Sonido': '🔊 Sound',
     'Sonidos de guitarra al buscar y al terminar descargas': 'Guitar sounds when searching and when downloads finish',
     'Ver qué trae esta versión': 'See what is new in this version',
@@ -215,7 +216,9 @@ window.I18N = (() => {
     'Poniendo el fondo…': 'Setting the background…',
 
     // what's new
-    'Todo lo que ha cambiado desde que se lanzó CH Buscador, lo más nuevo primero. Muchas de estas mejoras salieron de comentarios de la comunidad: ¡gracias!': 'Everything that has changed since CH Buscador launched, newest first. Many of these came from community comments: thank you!',
+    'Todo lo que ha cambiado desde que se lanzó CH Buscador, lo más nuevo primero. Muchas de estas mejoras salieron de comentarios de la comunidad: ¡gracias!': 'Everything that has changed since CH Song Finder launched, newest first. Many of these came from community comments: thank you!',
+    'En inglés el nombre también cambia:': 'In English the name changes too:',
+    'el logo dice CH Song Finder.': 'the logo says CH Song Finder.',
     'Inglés o español:': 'English or Spanish:',
     'toda la página se puede ver en inglés. Cámbialo con ES | EN arriba a la derecha; se recuerda para la próxima vez.': 'the whole page can be shown in English. Switch it with ES | EN at the top right; it is remembered for next time.',
     'Ajustes de descarga en una barra plegada:': 'Download settings in a folded bar:',
