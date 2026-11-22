@@ -49,6 +49,11 @@
   .topbar { position: absolute; top: 14px; right: 16px; display: flex; gap: 8px; z-index: 2; }
   .topbar button { font-size: 13px; padding: 6px 12px; border-radius: 999px; }
   .topbar button.on { border-color: var(--fire2); color: var(--fire3); }
+  /* the version sits small beside the name and opens the list of changes (bump it with every release: see CLAUDE.md) */
+  .brand { display: inline-flex; align-items: flex-start; gap: 10px; }
+  .ver { margin-top: .9em; padding: 2px 9px; border-radius: 999px; font: 600 12px var(--body); letter-spacing: .5px; color: var(--muted); background: rgba(0,0,0,.35); border: 1px solid var(--line); }
+  .ver:hover:not(:disabled) { color: var(--fire3); }
+  @media (max-width: 640px) { .ver { margin-top: .6em; font-size: 11px; padding: 1px 7px; } }
   .logo {
     font-family: "Metal Mania", var(--display); font-size: clamp(46px, 9vw, 92px); line-height: .95; margin: 0; letter-spacing: 1px; font-weight: 400;
     background: linear-gradient(180deg, #fff6d6 0%, var(--fire3) 28%, var(--fire2) 55%, var(--fire1) 85%);
@@ -403,7 +408,7 @@
 <body>
 <header class="stage">
   <div class="topbar"><button id="soundBtn" title="Sonidos de guitarra al buscar y al terminar descargas">🔇 Sonido</button></div>
-  <h1 class="logo">CH Buscador</h1>
+  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.4.0</button></div>
   <p class="tagline">Busca cualquier canción para Clone Hero · <b>si no trae tu nivel, te lo creamos</b></p>
   <div class="highway" aria-hidden="true">
     <div class="road">
@@ -464,7 +469,15 @@
       <p class="sub" style="margin-top:0">Todo lo que ha cambiado desde que se lanzó CH Buscador, lo más nuevo primero. Muchas de estas mejoras salieron de comentarios de la comunidad: ¡gracias!</p>
       <div class="changes">
         <div>
-          <h3>21 de noviembre de 2026</h3>
+          <h3>21 de noviembre de 2026 <small>v1.4.0</small></h3>
+          <ul>
+            <li><b>Diseño más cómodo:</b> en el celular el buscador aparece en la primera pantalla (las pestañas van en una fila que se desliza y los ajustes de descarga se pliegan con un resumen), Descargar se destaca en cada canción y se ve el foco al navegar con teclado.</li>
+            <li>La imagen o el video de fondo se elige en cada canción (se quitó "Imagen para todas").</li>
+            <li>La versión aparece junto al nombre; tócala para ver estas mejoras.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>21 de noviembre de 2026 <small>v1.3.0</small></h3>
           <ul>
             <li><b>Crear desde audio, más conectado con la canción:</b> cuando un riff se repite, sale con los mismos botones cada vez, y el pulso se detecta mejor. Medido contra charts oficiales de Rock Band.</li>
             <li><b>Batería desde el audio mucho más precisa:</b> ahora encuentra el 85% de los golpes de redoblante (antes, el 30%).</li>
@@ -476,18 +489,17 @@
             <li><b>Canciones con dos charts:</b> si traen notes.chart y notes.mid, los niveles se crean en el que lee Clone Hero (notes.mid).</li>
             <li>Aviso claro cuando el navegador no deja usar una carpeta, y guía de cómo crear la batería.</li>
             <li>Al publicar una versión nueva, la página ya no mezcla archivos nuevos y viejos.</li>
-            <li><b>Diseño más cómodo:</b> en el celular el buscador aparece en la primera pantalla (las pestañas van en una fila que se desliza y los ajustes de descarga se pliegan con un resumen), Descargar se destaca en cada canción y se ve el foco al navegar con teclado.</li>
             <li>Pack nuevo: <b>Rock Español Clásico</b> (Barón Rojo, Extremoduro, Héroes del Silencio, Saratoga y más).</li>
           </ul>
         </div>
         <div>
-          <h3>6 de noviembre de 2026</h3>
+          <h3>6 de noviembre de 2026 <small>v1.2.0</small></h3>
           <ul>
             <li><b>Niveles creados según el tiempo real entre notas,</b> no según el compás, conservando las notas más importantes. Medio queda sin acordes.</li>
           </ul>
         </div>
         <div>
-          <h3>4 de noviembre de 2026</h3>
+          <h3>4 de noviembre de 2026 <small>v1.1.0</small></h3>
           <ul>
             <li><b>🎤 Letra con tiempos</b> para las canciones que no la traen.</li>
             <li><b>🥁 Batería creada desde el audio,</b> con sus 4 niveles.</li>
@@ -500,7 +512,7 @@
           </ul>
         </div>
         <div>
-          <h3>30 de octubre de 2026 <small>lanzamiento</small></h3>
+          <h3>30 de octubre de 2026 <small>v1.0.0 · lanzamiento</small></h3>
           <ul>
             <li>Busca canciones en Chorus Encore y las guarda directo en tu carpeta Songs.</li>
             <li><b>Crea Fácil, Medio y Difícil</b> a partir del Experto, en charts .chart y .mid.</li>

@@ -924,6 +924,7 @@ $('#tab-packs').onclick = () => { tab('packs'); };
 $('#tab-lib').onclick = () => tab('lib');
 $('#tab-audio').onclick = () => tab('audio');
 $('#tab-mejoras').onclick = () => tab('mejoras');
+$('#appVersion').onclick = () => { tab('mejoras'); $('#view-mejoras').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 $('#tab-top').onclick = () => { tab('top'); loadTop(); };
 $('#topPeriodWeek').onclick = () => loadTop('week');
 $('#topPeriodAll').onclick = () => loadTop('all');
