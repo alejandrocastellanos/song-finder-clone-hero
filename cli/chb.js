@@ -130,33 +130,52 @@ async function cmdDescargar(o) {
   if (o.json) console.log(JSON.stringify(report, null, 2));
 }
 
+// every song under dir: .sng files and classic folders (song.ini + notes.chart / notes.mid)
 function walk(dir) {
-  const out = [];
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+  const out = [], entries = fs.readdirSync(dir, { withFileTypes: true });
+  if (CHB.isSongFolder(entries.filter(e => e.isFile()).map(e => e.name))) out.push({ folder: dir, names: entries.filter(e => e.isFile()).map(e => e.name) });
+  for (const e of entries) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) out.push(...walk(p));
-    else if (/\.sng$/i.test(e.name)) out.push(p);
+    else if (/\.sng$/i.test(e.name)) out.push({ file: p });
   }
   return out;
+}
+
+// a copy of the original first (never overwritten by a later run), then the new version
+function replaceKeeping(file, data) {
+  if (!fs.existsSync(file + '.original')) fs.copyFileSync(file, file + '.original');
+  fs.writeFileSync(file, data);
 }
 
 async function cmdArreglar(o) {
   if (!o.carpeta || o.carpeta === true) throw new Error('Indica la carpeta con --carpeta "RUTA"');
   const want = levels(o.niveles), allInst = !o['solo-guitarra'], k = knobs(o);
-  const files = walk(path.resolve(o.carpeta));
+  const songs = walk(path.resolve(o.carpeta));
   let fixed = 0;
-  for (const f of files) {
+  for (const s of songs) {
+    const where = path.relative(o.carpeta, s.file || s.folder) || path.basename(s.folder);
     try {
-      const buf = fs.readFileSync(f);
-      const { bytes, added } = CHB.processSng(new Uint8Array(buf), want, allInst, k);
+      if (s.file) {
+        const { bytes, added } = CHB.processSng(new Uint8Array(fs.readFileSync(s.file)), want, allInst, k);
+        if (!added.length) continue;
+        replaceKeeping(s.file, bytes);
+        fixed++; console.log(`ARREGLADA ${where} → ${CHB.summarize(added)}`);
+        continue;
+      }
+      // folder: with both charts Clone Hero plays notes.mid, so that's the one fixed
+      const mid = s.names.find(n => /^notes\.midi?$/i.test(n)), chart = mid || s.names.find(n => /^notes\.chart$/i.test(n));
+      const ini = s.names.find(n => /^song\.ini$/i.test(n));
+      const sng = CHB.folderToSng([ini, chart].map(name => ({ name, data: new Uint8Array(fs.readFileSync(path.join(s.folder, name))) })));
+      const { bytes, added } = CHB.processSng(CHB.writeSng(sng), want, allInst, k);
       if (!added.length) continue;
-      if (!fs.existsSync(f + '.original')) fs.copyFileSync(f, f + '.original');
-      fs.writeFileSync(f, bytes);
-      fixed++;
-      console.log(`ARREGLADA ${path.relative(o.carpeta, f)} → ${CHB.summarize(added)}`);
-    } catch (e) { console.log(`ERROR ${f}: ${e.message}`); }
+      const out = CHB.readSng(bytes).files.find(f => f.name === chart);
+      replaceKeeping(path.join(s.folder, chart), out.data);
+      fixed++; console.log(`ARREGLADA ${where} (carpeta) → ${CHB.summarize(added)}`);
+    } catch (e) { console.log(`ERROR ${where}: ${e.message}`); }
   }
-  console.log(`\nListo: ${files.length} canciones revisadas, ${fixed} arregladas (copia del original en *.sng.original).`);
+  const folders = songs.filter(s => s.folder).length;
+  console.log(`\nListo: ${songs.length} canciones revisadas${folders ? ` (${folders} en carpeta)` : ''}, ${fixed} arregladas (de cada archivo cambiado queda una copia .original).`);
 }
 
 function cmdCarpetas() {
@@ -174,11 +193,11 @@ function help() {
   node cli/chb.js buscar --genero "Cumbia" ...
   node cli/chb.js buscar --texto "Free Bird" ...
   node cli/chb.js descargar --numeros 1,3,5-8 --carpeta "RUTA"   (o --todas) [--solo-guitarra] [--editable]
-  node cli/chb.js arreglar --carpeta "RUTA"     agrega dificultades faltantes a una biblioteca existente
+  node cli/chb.js arreglar --carpeta "RUTA"     agrega dificultades faltantes a una biblioteca existente (.sng y canciones en carpeta)
 
   Ajustes de los niveles creados (descargar y arreglar):
     --densidad -2..2      menos notas (-2) o más notas (2); también: muchas-menos, menos, normal, mas, muchas-mas
-    --sin-acordes         solo notas sueltas en Medio y Difícil
+    --sin-acordes         solo notas sueltas también en Difícil
     --naranja-medio       permite el botón naranja en Medio
     --editable            guarda una carpeta (song.ini + chart + audio) para abrirla en Moonscraper
     --letra               si la canción no trae letra, la busca en LRCLIB y la agrega con tiempos

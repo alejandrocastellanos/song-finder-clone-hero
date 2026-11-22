@@ -78,12 +78,25 @@
     return out;
   }
 
+  /* The chart Clone Hero plays when a song brings more than one: a file named notes.* first, and .mid before .chart.
+     That's the order of scan-chart (the community scanner made to give the same result as Clone Hero).
+     Returns { chart, mid } with only the chosen one set. */
+  function chartOf(files) {
+    const isMid = f => /\.midi?$/i.test(f.name), named = f => /^notes\./i.test(f.name);
+    const pick = files.filter(f => /\.(chart|midi?)$/i.test(f.name)).sort((a, b) => (named(b) - named(a)) || (isMid(b) - isMid(a)))[0];
+    return { chart: pick && !isMid(pick) ? pick : null, mid: pick && isMid(pick) ? pick : null };
+  }
+
   /* ---------- difficulty generation ---------- */
-  // gap in beats, max notes per chord, fret map for lanes 0..4, MIDI base note
+  /* Gaps in seconds (a song's beat can be very short, so beats don't say how hard it feels),
+     max notes per chord, fret map for lanes 0..4, MIDI base note.
+     Measured against the hand-made Hard/Medium/Easy of 30 official Harmonix charts (Expert reduced here,
+     compared with theirs; 10 of the songs only used to check): these gaps give about the same number of
+     notes as theirs (the old ones, 1.67x longer, gave ~40% fewer; "menos notas" in the knobs is close to them). */
   const LEVELS = [
-    { key: 'H', name: 'Hard',   gap: 0.25, chord: 2, map: [0, 1, 2, 3, 4], midi: 84 },
-    { key: 'M', name: 'Medium', gap: 0.5,  chord: 2, map: [0, 1, 2, 3, 3], midi: 72 },
-    { key: 'E', name: 'Easy',   gap: 1.0,  chord: 1, map: [0, 1, 1, 2, 2], midi: 60 },
+    { key: 'H', name: 'Hard',   gap: 0.19, drumGap: 0.15, chord: 2, map: [0, 1, 2, 3, 4], midi: 84 },
+    { key: 'M', name: 'Medium', gap: 0.30, drumGap: 0.24, chord: 1, map: [0, 1, 2, 3, 3], midi: 72 },
+    { key: 'E', name: 'Easy',   gap: 0.51, drumGap: 0.42, chord: 1, map: [0, 1, 1, 2, 2], midi: 60 },
   ];
 
   /* Tuning knobs for the generated levels.
@@ -95,32 +108,52 @@
     return LEVELS.map(l => ({
       ...l,
       gap: l.gap * f,
+      drumGap: l.drumGap * f,
       chord: k.chords ? l.chord : 1,
       map: l.key === 'M' && k.orangeMedium ? [0, 1, 2, 3, 4] : l.map,
     }));
   }
 
-  function reduceChords(chords, res, lv, drums) {
-    const minGap = res * lv.gap, kept = [];
-    let last = -Infinity;
-    for (const c of chords) {
-      if (c.t - last < minGap) continue;
+  // keeps the items that matter most (highest weight) as long as none is closer than gap seconds to another
+  function spacedPick(items, gap, secOf, weightOf) {
+    const order = items.map((it, i) => ({ it, i, sec: secOf(it), w: weightOf(it) }))
+      .sort((a, b) => b.w - a.w || a.sec - b.sec);
+    const times = [], kept = [];
+    for (const x of order) {
+      let lo = 0, hi = times.length;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (times[m] < x.sec) lo = m + 1; else hi = m; }
+      if ((lo < times.length && times[lo] - x.sec < gap) || (lo > 0 && x.sec - times[lo - 1] < gap)) continue;
+      times.splice(lo, 0, x.sec); kept.push(x);
+    }
+    return kept.sort((a, b) => a.i - b.i).map(x => x.it);
+  }
+  const beatWeight = (t, res) => t % (res * 2) === 0 ? 4 : t % res === 0 ? 3 : t % (res / 2) === 0 ? 2 : 1;
+
+  // As in the official charts: Hard and Medium keep up to two hits (snare first, then kick, then the rest),
+  // so kick + cymbal stays; Easy drops the kick when a pad or cymbal sounds with it and keeps up to two of those.
+  function drumLanes(lanes, key) {
+    if (key === 'E') { const pads = lanes.filter(f => f > 0); return pads.length ? pads.slice(0, 2) : [0]; }
+    return [...lanes].sort((a, b) => (a === 1 ? 0 : a === 0 ? 1 : 2) - (b === 1 ? 0 : b === 0 ? 1 : 2)).slice(0, 2).sort((a, b) => a - b);
+  }
+
+  function reduceChords(chords, res, lv, drums, toSec) {
+    const kept = [];
+    for (const c of spacedPick(chords, drums ? lv.drumGap : lv.gap, x => toSec(x.t), x => beatWeight(x.t, res))) {
       let fr = [...new Set(c.frets)].sort((a, b) => a - b);
-      if (drums) {
-        if (fr.length > lv.chord) { const pads = fr.filter(f => f !== 0); fr = pads.length ? pads.slice(0, lv.chord) : [0]; }
-      } else {
+      if (drums) fr = drumLanes(fr, lv.key);
+      else {
         if (fr.length > 1) fr = fr.filter(f => f !== 7);   // open note inside a chord
         fr = [...new Set(fr.map(f => f === 7 ? 7 : lv.map[f]))].sort((a, b) => a - b);
-        if (fr.length > lv.chord) fr = lv.chord === 1 ? [fr[fr.length - 1]] : [fr[0], fr[fr.length - 1]];
+        // a chord that must become one note keeps its lowest one, as the official charts do
+        if (fr.length > lv.chord) fr = lv.chord === 1 ? [fr[0]] : [fr[0], fr[fr.length - 1]];
       }
       kept.push({ t: c.t, frets: fr, len: drums ? 0 : c.len, cym: c.cym });
-      last = c.t;
     }
     if (!drums) {
       for (let i = 0; i < kept.length; i++) {
         let len = kept[i].len;
         if (i + 1 < kept.length) { const room = kept[i + 1].t - kept[i].t - res / 4; if (len > room) len = Math.max(0, room); }
-        if (len < res / 2) len = 0;
+        if (toSec(kept[i].t + len) - toSec(kept[i].t) < 0.4) len = 0;
         kept[i].len = Math.round(len);
       }
     }
@@ -140,6 +173,10 @@
     const byName = Object.fromEntries(secs.map(s => [s.name, s]));
     let res = 192;
     for (const l of (byName.Song ? byName.Song.lines : [])) { const m = l.match(/^Resolution\s*=\s*(\d+)/); if (m) res = +m[1]; }
+    const tempo = [];
+    for (const l of (byName.SyncTrack ? byName.SyncTrack.lines : [])) { const m = l.match(/^(\d+)\s*=\s*B\s+(\d+)/); if (m && +m[2] > 0) tempo.push({ tick: +m[1], uspq: 6e10 / +m[2] }); }
+    tempo.sort((a, b) => a.tick - b.tick);
+    const toSec = tempoMap(tempo, res);
     const hasNotes = s => s && s.lines.some(l => /=\s*N\s/.test(l));
     const added = [];
     for (const ins of Object.keys(CHART_TRACKS)) {
@@ -166,7 +203,7 @@
       for (const lv of levels) {
         if (!want.includes(lv.key) || hasNotes(byName[lv.name + ins])) continue;
         const out = [];
-        for (const c of reduceChords(chords, res, lv, drums)) {
+        for (const c of reduceChords(chords, res, lv, drums, toSec)) {
           for (const f of c.frets) {
             out.push([c.t, `${c.t} = N ${f} ${c.len}`]);
             if (drums && c.cym.has(f)) out.push([c.t, `${c.t} = N ${f + 64} 0`]);
@@ -242,6 +279,10 @@
   function reduceMidi(u8, want, allInst, levels = LEVELS) {
     const m = parseMidi(u8), res = m.div, added = [];
     const latin = new TextDecoder('latin1');
+    const tempo = [];
+    for (const ev of m.tracks) for (const e of ev) if (e.meta === 0x51 && e.data.length === 3) tempo.push({ tick: e.t, uspq: (e.data[0] << 16) | (e.data[1] << 8) | e.data[2] });
+    tempo.sort((a, b) => a.tick - b.tick);
+    const toSec = tempoMap(tempo, res);
     for (const ev of m.tracks) {
       const nameEv = ev.find(e => e.meta === 3);
       const tname = nameEv ? latin.decode(nameEv.data).trim() : '';
@@ -266,7 +307,7 @@
       for (const lv of levels) {
         if (!want.includes(lv.key)) continue;
         if (ev.some(e => isOn(e) && e.d1 >= lv.midi && e.d1 <= lv.midi + 4)) continue;
-        for (const c of reduceChords(chords, res, lv, drums)) {
+        for (const c of reduceChords(chords, res, lv, drums, toSec)) {
           const len = c.len > 0 ? c.len : Math.max(1, res >> 4);
           for (const f of c.frets) {
             if (f === 7) continue;
@@ -289,8 +330,7 @@
     const levels = levelsFor(knobs);
     const src = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
     const sng = readSng(src);
-    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
-    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    const { chart, mid } = chartOf(sng.files);
     let added = [], format = chart ? 'chart' : mid ? 'mid' : 'otro';
     if (chart) {
       const r = reduceChartText(utf8.decode(chart.data), want, allInst, levels);
@@ -306,8 +346,7 @@
   function sngDifficulties(buf) {
     const sng = buf.files ? buf : readSng(buf), out = {};
     const add = (inst, k) => { (out[inst] = out[inst] || new Set()).add(k); };
-    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
-    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    const { chart, mid } = chartOf(sng.files);
     if (chart) {
       const text = utf8.decode(chart.data);
       const re = /\[(Easy|Medium|Hard|Expert)(Single|DoubleGuitar|DoubleRhythm|DoubleBass|Keyboard|Drums)\]\s*\{([^}]*)\}/g;
@@ -403,7 +442,7 @@
     const first = await part(0, 131071);
     const { mask, index } = readSngIndex(first.bytes);
     const has = re => index.some(f => re.test(f.name));
-    const chart = index.find(f => /\.(chart|midi?)$/i.test(f.name));
+    const picked = chartOf(index), chart = picked.chart || picked.mid;
     let diffs = {}, lyrics = false;
     if (chart) {
       const end = chart.off + chart.len;
@@ -521,8 +560,7 @@
   function songTimeline(buf) {
     const sng = buf.files ? buf : readSng(buf);
     const meta = Object.fromEntries(sng.meta);
-    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
-    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    const { chart, mid } = chartOf(sng.files);
     const tracks = chart ? notesFromChart(utf8.decode(chart.data)) : mid ? notesFromMidi(mid.data) : {};
     const delay = (parseFloat(meta.delay) || 0) / 1000;
     if (delay) for (const lv of Object.values(tracks)) for (const notes of Object.values(lv)) for (const n of notes) { n.t += delay; if (n.end) n.end += delay; }
@@ -552,8 +590,7 @@
   function songClock(sng) {
     const meta = Object.fromEntries(sng.meta);
     const delay = (parseFloat(meta.delay) || 0) / 1000;
-    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
-    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    const { chart, mid } = chartOf(sng.files);
     let res = 192, offset = delay, tempo = [];
     if (chart) {
       const text = utf8.decode(chart.data);
@@ -588,9 +625,8 @@
   const isLyricEvent = e => (e.meta === 5 || e.meta === 1) && e.data.length && e.data[0] !== 0x5B;   // skips [events]
 
   function hasLyrics(sng) {
-    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
+    const { chart, mid } = chartOf(sng.files);
     if (chart) return /=\s*E\s+"lyric /.test(utf8.decode(chart.data));
-    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
     if (!mid) return false;
     const v = vocalsTrack(parseMidi(mid.data));
     return !!v && v.some(isLyricEvent);
@@ -664,8 +700,7 @@
   /* Adds timed lyrics to a chart without them. phrases: [{ t, end, words: [{ t, text }] }] in seconds. */
   function addLyrics(sng, phrases) {
     const clock = songClock(sng);
-    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
-    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    const { chart, mid } = chartOf(sng.files);
     if (chart) {
       const lines = [];
       for (const p of phrases) {
@@ -724,17 +759,18 @@
 
   /* hits: [{ t, lane }] in seconds; lane 0 kick, 1 red, 2 yellow, 3 blue, 4 green. Snapped to 16ths of the song's own tempo map. */
   function addDrumTrack(sng, hits) {
-    const clock = songClock(sng), grid = clock.res / 4, byTick = new Map();
+    const clock = songClock(sng), grid = clock.res / 4, byTick = new Map(), secOf = new Map();
     for (const h of hits) {
       // hi-hats go on 8ths, as charters usually simplify them; the rest on 16ths
       const step = h.lane === 2 ? grid * 2 : grid;
       const tick = Math.round(clock.toTick(h.t) / step) * step;
-      if (!byTick.has(tick)) byTick.set(tick, new Set());
+      if (!byTick.has(tick)) { byTick.set(tick, new Set()); secOf.set(tick, h.t); }
       byTick.get(tick).add(h.lane);
     }
-    const ticks = [...byTick.keys()].sort((a, b) => a - b);
-    const chart = sng.files.find(f => /\.chart$/i.test(f.name));
-    const mid = sng.files.find(f => /\.midi?$/i.test(f.name));
+    // an Expert drummer's pace: hits at least 0.17 s apart, keeping beats and snares first
+    const hasSnare = t => byTick.get(t).has(1) ? 1 : 0;
+    const ticks = spacedPick([...byTick.keys()].sort((a, b) => a - b), 0.17, t => secOf.get(t), t => beatWeight(t, clock.res) + hasSnare(t));
+    const { chart, mid } = chartOf(sng.files);
     if (chart) {
       const lines = [];
       for (const t of ticks) for (const l of [...byTick.get(t)].sort()) {
@@ -804,14 +840,33 @@
     return out;
   }
 
-  // a .sng becomes a classic song folder: song.ini + chart + audio + art, inside "Artist - Name/"
+  /* ---------- classic song folders: song.ini + notes.chart / notes.mid + audio + art ---------- */
+  const SONG_INI = /^song\.ini$/i, NOTES_FILE = /^notes\.(chart|midi?)$/i;
+  const isSongFolder = names => names.some(n => SONG_INI.test(n)) && names.some(n => NOTES_FILE.test(n));
+  function parseIni(data) {
+    let text = utf8.decode(data);
+    if (text.includes('\uFFFD')) text = new TextDecoder('latin1').decode(data);
+    const meta = [];
+    for (const l of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+      const m = l.match(/^\s*([^=[;#][^=]*?)\s*=\s*(.*?)\s*$/);
+      if (m) meta.push([m[1].trim().toLowerCase(), m[2]]);
+    }
+    return meta;
+  }
+  const iniText = meta => '[song]\r\n' + Object.entries(Object.fromEntries(meta)).map(([k, v]) => `${k} = ${v}`).join('\r\n') + '\r\n';
+  // the files of one folder [{ name, data }] -> the same shape readSng gives, so everything here works on folders too
+  function folderToSng(files) {
+    const ini = files.find(f => SONG_INI.test(f.name));
+    return { version: 1, meta: ini ? parseIni(ini.data) : [], files: files.filter(f => f !== ini) };
+  }
+  // and back: song.ini plus every file
+  const sngToFolder = sng => [{ name: 'song.ini', data: enc.encode(iniText(sng.meta)) }, ...sng.files];
+  const folderName = sng => { const meta = Object.fromEntries(sng.meta); return fileName({ artist: meta.artist || 'Desconocido', name: meta.name || 'Cancion' }).replace(/\.sng$/, ''); };
+
+  // a .sng becomes a classic song folder inside "Artist - Name/", zipped
   function sngToZip(buf) {
-    const sng = buf.files ? buf : readSng(buf);
-    const meta = Object.fromEntries(sng.meta);
-    const ini = '[song]\r\n' + Object.entries(meta).map(([k, v]) => `${k} = ${v}`).join('\r\n') + '\r\n';
-    const folder = fileName({ artist: meta.artist || 'Desconocido', name: meta.name || 'Cancion' }).replace(/\.sng$/, '');
-    const files = [{ name: `${folder}/song.ini`, data: enc.encode(ini) }, ...sng.files.map(f => ({ name: `${folder}/${f.name}`, data: f.data }))];
-    return { folder, bytes: makeZip(files) };
+    const sng = buf.files ? buf : readSng(buf), folder = folderName(sng);
+    return { folder, bytes: makeZip(sngToFolder(sng).map(f => ({ name: `${folder}/${f.name}`, data: f.data }))) };
   }
 
   /* ---------- result helpers ---------- */
@@ -880,7 +935,7 @@
 
   const api = {
     readSng, writeSng, readSngIndex, xorData, parseMidi, writeMidi, reduceChartText, reduceMidi, processSng, sngDifficulties, songTimeline,
-    levelsFor, DEFAULT_KNOBS, makeZip, sngToZip,
+    levelsFor, DEFAULT_KNOBS, spacedPick, chartOf, makeZip, sngToZip, isSongFolder, folderToSng, sngToFolder, folderName, NOTES_FILE,
     peekSng, songClock, hasLyrics, parseLrc, lrcToPhrases, findLyrics, addLyrics, hasDrums, addDrumTrack, setBackground,
     encoreSearch, fetchSng, findSongs, pickBest, nativeDiffs, hasNative, canFill, fileName, summarize,
     INST_LABEL, LEVEL_LABEL, FILES,

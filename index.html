@@ -329,6 +329,12 @@
   .ac-lrc textarea { width: 100%; margin-top: 6px; padding: 10px; background: #0e0c10; color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: 14px/1.5 ui-monospace, Consolas, monospace; }
   .knobs-info { margin-top: 12px; font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .knobs-info b { color: #9fd4ff; font-weight: 600; }
+  .drum-help { margin: 12px 0 0; font-size: 13.5px; line-height: 1.5; }
+  .changes { display: grid; gap: 18px; margin-top: 8px; }
+  .changes h3 { font-size: 20px; color: var(--fire3); margin: 0 0 6px; }
+  .changes h3 small { font-family: inherit; font-size: 13px; color: var(--muted); letter-spacing: 0; margin-left: 8px; }
+  .changes ul { margin: 0; padding-left: 20px; display: grid; gap: 5px; line-height: 1.45; }
+  .changes li b { color: #9fd4ff; font-weight: 600; }
   .pv-stats { color: var(--muted); font-size: 14px; }
 
   footer { text-align: center; color: var(--dim); font-size: 13px; padding: 0 16px 90px; }
@@ -383,6 +389,7 @@
     <button id="tab-packs">Packs</button>
     <button id="tab-lib">Mi biblioteca</button>
     <button id="tab-audio">🧪 Crear desde audio</button>
+    <button id="tab-mejoras">✨ Mejoras</button>
   </div>
 
   <div class="card">
@@ -399,6 +406,7 @@
       <label class="chk lv-M"><input type="checkbox" id="needM" checked> Medio</label>
       <label class="chk lv-H"><input type="checkbox" id="needH" checked> Difícil</label>
       <label class="chk lv-B"><input type="checkbox" id="allInst" checked> También bajo, batería y teclado</label>
+      <label class="chk" title="song.ini + chart + audio en una carpeta por canción. Para Clone Hero anterior a la 1.1 (no lee .sng) y para editarla en Moonscraper"><input type="checkbox" id="asFolder"> 📁 Guardar como carpeta</label>
     </div>
     <div class="row" style="margin-top:12px">
       <span class="sub">Si le falta:</span>
@@ -409,8 +417,63 @@
       <input type="file" id="songBgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>
       <button class="ghost chip hidden" id="bgClear">Quitar</button>
     </div>
+    <p class="sub drum-help">🥁 <b>¿Cómo creo la batería?</b> Marca <b>Crear la batería</b> y se crea sola al descargar las canciones que no la traen (en <b>▶ Ver</b> la pruebas antes). Para tu biblioteca, márcala y usa <b>Mi biblioteca → Revisar y arreglar</b>. Para una canción que nadie ha charteado, usa <b>🧪 Crear desde audio</b>.</p>
     <div class="knobs-info" id="knobsInfo"></div>
   </div>
+
+  <section id="view-mejoras" class="hidden">
+    <div class="card">
+      <h2>✨ Mejoras</h2>
+      <p class="sub" style="margin-top:0">Todo lo que ha cambiado desde que se lanzó CH Buscador, lo más nuevo primero. Muchas de estas mejoras salieron de comentarios de la comunidad: ¡gracias!</p>
+      <div class="changes">
+        <div>
+          <h3>21 de noviembre de 2026</h3>
+          <ul>
+            <li><b>Crear desde audio, más conectado con la canción:</b> cuando un riff se repite, sale con los mismos botones cada vez, y el pulso se detecta mejor. Medido contra charts oficiales de Rock Band.</li>
+            <li><b>Batería desde el audio mucho más precisa:</b> ahora encuentra el 85% de los golpes de redoblante (antes, el 30%).</li>
+            <li><b>Niveles creados más parecidos a los oficiales:</b> la batería en Medio conserva los platillos, los acordes que se vuelven una nota dejan la más baja y la cantidad de notas es como la de Rock Band. Si los prefieres más fáciles, elige "menos notas" en las perillas.</li>
+            <li><b>🎼 Solo mapa de tempo:</b> el audio con el pulso ya marcado, para poner tú las notas en Moonscraper.</li>
+            <li><b>Mi biblioteca arregla canciones en carpeta</b> (song.ini + notes.chart o notes.mid), no solo archivos .sng.</li>
+            <li><b>📁 Guardar como carpeta:</b> para Clone Hero anterior a la 1.1 (no lee .sng) y para editar en Moonscraper.</li>
+            <li><b>Audio más compatible:</b> si subes WAV, M4A o FLAC, se convierte a Opus (pesa unas 9 veces menos).</li>
+            <li><b>Canciones con dos charts:</b> si traen notes.chart y notes.mid, los niveles se crean en el que lee Clone Hero (notes.mid).</li>
+            <li>Aviso claro cuando el navegador no deja usar una carpeta, y guía de cómo crear la batería.</li>
+            <li>Pack nuevo: <b>Rock Español Clásico</b> (Barón Rojo, Extremoduro, Héroes del Silencio, Saratoga y más).</li>
+          </ul>
+        </div>
+        <div>
+          <h3>6 de noviembre de 2026</h3>
+          <ul>
+            <li><b>Niveles creados según el tiempo real entre notas,</b> no según el compás, conservando las notas más importantes. Medio queda sin acordes.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>4 de noviembre de 2026</h3>
+          <ul>
+            <li><b>🎤 Letra con tiempos</b> para las canciones que no la traen.</li>
+            <li><b>🥁 Batería creada desde el audio,</b> con sus 4 niveles.</li>
+            <li><b>🖼 Imagen o video de fondo,</b> para todas las canciones o para cada una.</li>
+            <li><b>26 packs nuevos</b> por género y por artista.</li>
+            <li><b>🔥 Lo más descargado</b> (semana e histórico), contador y valoraciones.</li>
+            <li>Cada canción muestra si trae letra, fondo, video, portada y batería.</li>
+            <li>Descargas que funcionan en Firefox, Safari y Brave (botón Guardar o archivos .zip).</li>
+            <li>Crear desde audio: imagen, búsqueda de letra y letra pegada con sus tiempos.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>30 de octubre de 2026 <small>lanzamiento</small></h3>
+          <ul>
+            <li>Busca canciones en Chorus Encore y las guarda directo en tu carpeta Songs.</li>
+            <li><b>Crea Fácil, Medio y Difícil</b> a partir del Experto, en charts .chart y .mid.</li>
+            <li><b>▶ Vista previa jugable</b> con perillas para ajustar los niveles creados.</li>
+            <li>Packs, estadísticas de tu biblioteca y exportar a Moonscraper.</li>
+            <li><b>🧪 Crear chart desde audio</b> (experimental).</li>
+            <li>También se puede usar desde Claude Code y la línea de comandos.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <section id="view-search">
     <div class="card">
@@ -475,7 +538,7 @@
   <section id="view-lib" class="hidden">
     <div class="card">
       <h2>Mi biblioteca</h2>
-      <p class="sub" style="margin-top:0">Revisa las canciones <b>.sng</b> de tu carpeta (y subcarpetas). <b>Ver estadísticas</b> solo mira, no cambia nada. <b>Revisar y arreglar</b> les crea los niveles que falten y guarda una copia <b>.sng.original</b> de cada canción que modifica.</p>
+      <p class="sub" style="margin-top:0">Revisa las canciones de tu carpeta (y subcarpetas): archivos <b>.sng</b> y también canciones <b>en carpeta</b> (song.ini + notes.chart o notes.mid, las que se editan en Moonscraper). <b>Ver estadísticas</b> solo mira, no cambia nada. <b>Revisar y arreglar</b> les crea los niveles que falten (y la letra o la batería si las marcaste arriba) y guarda una copia <b>.original</b> de cada archivo que modifica.</p>
       <div class="row"><button id="statsLib">📊 Ver estadísticas</button><button class="primary" id="fixLib">Revisar y arreglar</button></div>
       <input type="file" id="libInput" webkitdirectory multiple hidden>
       <div class="log hidden" id="libLog"></div>
@@ -486,7 +549,8 @@
   <section id="view-audio" class="hidden">
     <div class="card">
       <h2>Crear chart desde audio <span class="beta">Experimental</span></h2>
-      <p class="sub" style="margin-top:0">Para canciones que nadie ha chartiado. La app escucha la canción, detecta el ritmo y cuándo suena cada nota, y arma un chart jugable con <b>Fácil, Medio, Difícil y Experto</b>. Las notas siguen el ritmo de <b>toda la canción</b> (no solo la guitarra), así que no va a quedar como uno hecho a mano. Todo se hace en tu PC: el audio no se sube a ningún lado.</p>
+      <p class="sub" style="margin-top:0">Para canciones que nadie ha chartiado. La app escucha la canción, detecta el pulso y cuándo suena cada nota, y arma un chart jugable con <b>Fácil, Medio, Difícil y Experto</b>. Cuando un riff se repite, se toca con los mismos botones cada vez, como en los charts hechos a mano. Escucha <b>toda la canción</b> (no solo la guitarra), así que no va a quedar igual a uno hecho por un charter. Todo se hace en tu PC: el audio no se sube a ningún lado.</p>
+      <p class="sub">¿Prefieres poner las notas tú? <b>🎼 Solo mapa de tempo</b> te da la carpeta con el audio y el pulso ya marcado, lista para abrir en <b>Moonscraper</b>.</p>
       <label class="drop" id="drop">
         <input type="file" id="audioFile" accept="audio/*,.mp3,.ogg,.opus,.wav,.m4a,.flac" hidden>
         <span class="drop-icon">🎵</span>
@@ -513,7 +577,7 @@
         <p class="sub">Formato LRC: cada línea con su tiempo, por ejemplo <code>[00:21.50] Aquí va la línea</code>. Hay editores gratis de LRC en internet para marcar los tiempos mientras suena la canción. Si pegas algo aquí, se usa esto en vez de buscar.</p>
         <textarea id="acLrc" rows="6" placeholder="[00:21.50] Primera línea&#10;[00:25.10] Segunda línea" spellcheck="false"></textarea>
       </details>
-      <div class="row" style="margin-top:14px"><button class="primary" id="acGo" disabled>Crear chart</button></div>
+      <div class="row" style="margin-top:14px"><button class="primary" id="acGo" disabled>Crear chart</button><button id="acTempo" disabled title="Una carpeta con el audio y un chart vacío con el pulso ya marcado, para poner tú las notas en Moonscraper">🎼 Solo mapa de tempo (Moonscraper)</button></div>
       <div class="ac-prog hidden" id="acProg"><span id="acProgText"></span><div class="qtrack"><i id="acProgBar"></i></div></div>
     </div>
     <div class="card hidden" id="acResult">

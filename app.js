@@ -46,10 +46,17 @@ function showFolder() {
       ? '<span class="sub">En Brave puedes guardar directo en Songs: abre <b>brave://flags/#file-system-access-api</b>, actívalo y reinicia el navegador.</span>'
       : '<span class="sub">Para guardarlas directo en Songs usa Chrome, Edge u Opera en computadora.</span>');
 }
+const FOLDER_HELP = '<b>El navegador no deja usar esa carpeta.</b><br><small>Chrome y Edge bloquean carpetas del sistema, como las que están dentro de <b>Archivos de programa</b>. '
+  + 'Crea una carpeta nueva, por ejemplo <b>Documentos\\Clone Hero\\Songs</b>, elígela aquí y agrégala en Clone Hero en <b>Settings → General → Song Folders</b>. '
+  + 'Si tu Clone Hero es anterior a la versión 1.1, activa <b>Guardar como carpeta</b>: esas versiones no leen archivos .sng.</small>';
 async function pickFolder() {
   if (!canPickDir) return false;
   try { dirHandle = await window.showDirectoryPicker({ id: 'ch-songs', mode: 'readwrite' }); await kv('dir', dirHandle); showFolder(); return true; }
-  catch { return false; }
+  catch (e) {
+    // closing the picker is AbortError; anything else is the browser refusing that folder
+    if (e && e.name !== 'AbortError') FX.toast(FOLDER_HELP, 20000);
+    return false;
+  }
 }
 // Browsers let a page start one download by itself and silently block the next ones,
 // so from the second on the person gets a link: a real click is never blocked.
@@ -75,6 +82,22 @@ async function saveSong(name, bytes) {
   return link ? { where: 'lista: pulsa Guardar', link } : { where: 'enviada a tu carpeta de Descargas' };
 }
 
+// "Guardar como carpeta": song.ini + chart + audio inside "Artista - Canción/", for Clone Hero before 1.1
+// (which can't read .sng) and for editing in Moonscraper
+const asFolder = () => $('#asFolder').checked;
+const folderFiles = bytes => { const sng = CHB.readSng(bytes); return { folder: CHB.folderName(sng), files: CHB.sngToFolder(sng) }; };
+async function saveOut(name, bytes) {
+  if (!asFolder()) return saveSong(name, bytes);
+  const { folder, files } = folderFiles(bytes);
+  if (dirHandle && await ensurePermission().catch(() => false)) {
+    const sub = await dirHandle.getDirectoryHandle(folder, { create: true });
+    for (const f of files) await writeFile(sub, f.name, f.data);
+    return { where: 'guardada como carpeta en ' + dirHandle.name };
+  }
+  const link = deliver(folder + '.zip', new Blob([CHB.makeZip(files.map(f => ({ name: `${folder}/${f.name}`, data: f.data })))], { type: 'application/zip' }));
+  return link ? { where: 'lista: pulsa Guardar y descomprímela en Songs', link } : { where: 'enviada a Descargas en .zip: descomprímela en tu carpeta Songs' };
+}
+
 /* ---------- download + generation ---------- */
 // knobs for the generated levels, shared by the preview, downloads and the library fixer
 let knobs = { ...CHB.DEFAULT_KNOBS };
@@ -89,7 +112,7 @@ function showKnobs() {
     + (custom ? ' <button class="ghost chip" id="knobsReset">Restablecer</button>' : ' <span class="sub">(ajústalos desde ▶ Ver)</span>');
   const r = $('#knobsReset'); if (r) r.onclick = () => setKnobs(CHB.DEFAULT_KNOBS);
 }
-function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knobs, lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked }); }
+function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knobs, lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked, folder: asFolder() }); }
 
 /* ---------- extras: lyrics, drums and background ---------- */
 const askedFor = {};        // md5 -> { lyrics, drums } requested from the preview for one song
@@ -277,7 +300,7 @@ let zipBatch = [], zipPart = 0;
 function flushZip() {
   if (!zipBatch.length) return;
   zipPart++;
-  const zip = CHB.makeZip(zipBatch.map(x => ({ name: x.name, data: x.bytes })));
+  const zip = CHB.makeZip(zipBatch.flatMap(x => x.files || [{ name: x.name, data: x.bytes }]));
   const zipName = `CH Buscador - canciones ${zipPart}.zip`;
   const link = deliver(zipName, new Blob([zip], { type: 'application/zip' }));
   for (const x of zipBatch) setStatus(x.md5, `${link ? 'Lista en' : '✔ en'} "${zipName}" · ${x.gen}`, 'ok', link);
@@ -305,11 +328,12 @@ async function runQueue() {
       const levels = added.filter(a => a !== 'X:drums');
       const gen = [levels.length ? `se creó: ${summarize(levels)}` : 'ya traía los niveles', extrasText(extras), extras.lyrics === 'added' || extras.lyrics === 'none' ? '' : (hasLyrics ? '🎤 con letra' : '🎤 sin letra')].filter(Boolean).join(' · ');
       if (batch) {
-        zipBatch.push({ md5: s.md5, name: fileName(s), bytes, gen });
+        if (asFolder()) { const { folder, files } = folderFiles(bytes); zipBatch.push({ md5: s.md5, files: files.map(f => ({ name: `${folder}/${f.name}`, data: f.data })), gen }); }
+        else zipBatch.push({ md5: s.md5, name: fileName(s), bytes, gen });
         setStatus(s.md5, 'Lista, esperando para empaquetar…');
         if (zipBatch.length >= ZIP_EVERY) flushZip();
       } else {
-        const { where, link } = await saveSong(fileName(s), bytes);
+        const { where, link } = await saveOut(fileName(s), bytes);
         setStatus(s.md5, `${link ? '' : '✔ '}${where} · ${gen}${ok ? '' : ' · ⚠ no se pudo completar la guitarra'}`, ok ? 'ok' : 'err', link);
         if (link) { links.push({ s, link }); pendingSaves[link.url] = s; }
       }
@@ -563,20 +587,68 @@ function setBackdrop(s) {
   }, 120);
 }
 
-/* ---------- library: fix and stats ---------- */
+/* ---------- library: fix and stats (.sng files and classic song folders) ---------- */
+const AUDIO = /\.(ogg|opus|mp3|wav)$/i;
+const sameBytes = (a, b) => a && b && a.length === b.length && a.every((x, i) => x === b[i]);
+async function writeFile(dir, name, data) { const fh = await dir.getFileHandle(name, { create: true }); const w = await fh.createWritable(); await w.write(data); await w.close(); }
+// every song under a folder: a .sng file, or a folder with song.ini + notes.chart / notes.mid
 async function* walk(dir, path = '') {
-  for await (const [name, h] of dir.entries()) {
+  const entries = [];
+  for await (const e of dir.entries()) entries.push(e);
+  const files = entries.filter(([, h]) => h.kind === 'file'), handles = new Map(files);
+  if (CHB.isSongFolder(files.map(([n]) => n))) yield {
+    kind: 'folder', path: (path || dir.name).replace(/\/$/, ''), names: files.map(([n]) => n),
+    read: async name => new Uint8Array(await (await handles.get(name).getFile()).arrayBuffer()),
+    size: async () => { let b = 0; for (const [, h] of files) b += (await h.getFile()).size; return b; },
+    write: (name, data) => writeFile(dir, name, data),
+  };
+  for (const [name, h] of entries) {
     if (h.kind === 'directory') yield* walk(h, path + name + '/');
-    else if (/\.sng$/i.test(name)) yield { dir, name, h, path: path + name };
+    else if (/\.sng$/i.test(name)) yield { kind: 'sng', path: path + name, name, getFile: () => h.getFile(), write: (n, data) => writeFile(dir, n, data) };
   }
 }
-// the same library, read from a writable folder (Chrome, Edge) or from a read-only folder selection (Firefox, Safari)
-async function* libraryEntries(files) {
-  if (files) {
-    for (const file of files) if (/\.sng$/i.test(file.name)) yield { path: file.webkitRelativePath || file.name, name: file.name, getFile: async () => file };
-    return;
+// the same library from a read-only folder selection (Firefox, Safari): results go out in .zip files
+async function* fromFileList(files) {
+  const dirs = new Map();
+  for (const file of files) {
+    const rel = file.webkitRelativePath || file.name;
+    if (/\.sng$/i.test(file.name)) { yield { kind: 'sng', path: rel, name: file.name, getFile: async () => file }; continue; }
+    const d = rel.slice(0, rel.lastIndexOf('/') + 1);
+    if (!dirs.has(d)) dirs.set(d, new Map());
+    dirs.get(d).set(file.name, file);
   }
-  for await (const f of walk(dirHandle)) yield { path: f.path, name: f.name, getFile: () => f.h.getFile(), dir: f.dir, h: f.h };
+  for (const [d, m] of dirs) if (CHB.isSongFolder([...m.keys()])) yield {
+    kind: 'folder', path: d.replace(/\/$/, ''), names: [...m.keys()],
+    read: async n => new Uint8Array(await m.get(n).arrayBuffer()),
+    size: async () => [...m.values()].reduce((a, f) => a + f.size, 0),
+  };
+}
+const libraryEntries = files => files ? fromFileList(files) : walk(dirHandle);
+// a song folder as a .sng in memory: song.ini and the chart, plus the audio only when the drums come from it.
+// With both charts Clone Hero plays notes.mid, so that's the one used.
+async function folderSng(f, withAudio) {
+  const mid = f.names.find(n => /^notes\.midi?$/i.test(n));
+  const pick = f.names.filter(n => /^song\.ini$/i.test(n) || (mid ? n === mid : /^notes\.chart$/i.test(n)) || (withAudio && AUDIO.test(n) && !/^preview\./i.test(n)));
+  return CHB.folderToSng(await Promise.all(pick.map(async name => ({ name, data: await f.read(name) }))));
+}
+// fixes one song; returns { note, changed: [{ name, data, original }] } (changed is empty when nothing had to change)
+async function fixOne(f, say) {
+  const flags = { lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked };
+  const src = f.kind === 'folder' ? await folderSng(f, flags.drums) : null;
+  const buf = src ? CHB.writeSng(src) : new Uint8Array(await (await f.getFile()).arrayBuffer());
+  const { bytes: rich, extras } = await enrichBytes({ md5: f.path, artist: '', name: '' }, buf, flags, say);
+  const { bytes, added } = processSng(rich, want(), $('#allInst').checked, knobs);
+  const note = [added.length ? summarize(added) : '', extrasText(extras)].filter(Boolean).join(' · ');
+  if (bytes === buf) return { note, changed: [] };
+  if (!src) return { note, changed: [{ name: f.name, data: bytes, original: buf }] };
+  // a folder only gets back what changed: the chart, and song.ini when it now says it has drums
+  const out = CHB.readSng(bytes), before = new Map(src.files.map(x => [x.name, x.data])), changed = [];
+  for (const x of out.files) if (CHB.NOTES_FILE.test(x.name) && !sameBytes(before.get(x.name), x.data)) changed.push({ name: x.name, data: x.data, original: before.get(x.name) });
+  if (JSON.stringify(out.meta) !== JSON.stringify(src.meta)) {
+    const iniName = f.names.find(n => /^song\.ini$/i.test(n));
+    changed.push({ name: iniName, data: CHB.sngToFolder(out)[0].data, original: await f.read(iniName) });
+  }
+  return { note, changed };
 }
 async function fixLibrary(files) {
   const log = $('#libLog'); const say = t => { log.textContent += t + '\n'; log.scrollTop = log.scrollHeight; };
@@ -585,28 +657,29 @@ async function fixLibrary(files) {
     if (!(await ensurePermission())) { say('Sin permiso para la carpeta.'); return; }
   }
   log.classList.remove('hidden'); log.textContent = ''; $('#fixLib').disabled = true;
-  let n = 0, fixed = 0;
+  let n = 0, fixed = 0, folders = 0;
   for await (const f of libraryEntries(files)) {
-    n++;
+    n++; if (f.kind === 'folder') folders++;
+    const label = f.path + (f.kind === 'folder' ? ' 📁' : '');
     try {
-      const buf = new Uint8Array(await (await f.getFile()).arrayBuffer());
-      const { bytes: rich, extras } = await enrichBytes({ md5: f.path, artist: '', name: '' }, buf, { lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked }, t => say(`           ${f.path}: ${t}`));
-      const { bytes, added } = processSng(rich, want(), $('#allInst').checked, knobs);
-      const note = [added.length ? summarize(added) : '', extrasText(extras)].filter(Boolean).join(' · ');
-      if (bytes === buf) { say(`OK         ${f.path}${note ? ' → ' + note : ''}`); continue; }
-      if (f.h) {
-        const bk = await f.dir.getFileHandle(f.name + '.original', { create: true });
-        let w = await bk.createWritable(); await w.write(buf); await w.close();
-        w = await f.h.createWritable(); await w.write(bytes); await w.close();
+      const { note, changed } = await fixOne(f, t => say(`           ${label}: ${t}`));
+      if (!changed.length) { say(`OK         ${label}${note ? ' → ' + note : ''}`); continue; }
+      if (f.write) {
+        // a copy of each original first, never overwritten by a later run
+        const have = f.names || [];
+        for (const c of changed) if (!have.includes(c.name + '.original')) await f.write(c.name + '.original', c.original);
+        for (const c of changed) await f.write(c.name, c.data);
       } else {
-        zipBatch.push({ md5: 'lib-' + n, name: f.path, bytes, gen: note });
+        const dir = f.kind === 'folder' ? f.path + '/' : f.path.slice(0, f.path.lastIndexOf('/') + 1);
+        zipBatch.push({ md5: 'lib-' + n, files: changed.map(c => ({ name: dir + c.name, data: c.data })), gen: note });
         if (zipBatch.length >= ZIP_EVERY) flushZip();
       }
-      fixed++; say(`ARREGLADA  ${f.path} → ${note}`);
-    } catch (e) { say(`ERROR      ${f.path}: ${e.message}`); }
+      fixed++; say(`ARREGLADA  ${label} → ${note}`);
+    } catch (e) { say(`ERROR      ${label}: ${e.message}`); }
   }
   if (files) { flushZip(); zipPart = 0; }
-  say(`\nListo: ${n} canciones revisadas, ${fixed} arregladas. ${files && fixed ? 'Descomprime los .zip sobre tu carpeta Songs para reemplazarlas. ' : ''}En Clone Hero dale a "Scan Songs".`);
+  if (!n) say('No encontré canciones: ni archivos .sng ni carpetas con song.ini y notes.chart / notes.mid.');
+  else say(`\nListo: ${n} canciones revisadas${folders ? ` (${folders} en carpeta)` : ''}, ${fixed} arregladas. ${files && fixed ? 'Descomprime los .zip sobre tu carpeta Songs para reemplazarlas. ' : fixed ? 'De cada archivo cambiado quedó una copia .original. ' : ''}En Clone Hero dale a "Scan Songs".`);
   $('#fixLib').disabled = false;
   if (fixed) { FX.sparks(); FX.strum(); }
 }
@@ -620,7 +693,7 @@ function runLibrary(action) {
 async function readLite(file) {
   const head = new Uint8Array(await file.slice(0, 262144).arrayBuffer());
   const { mask, meta, index } = CHB.readSngIndex(head);
-  const chart = index.find(f => /\.(chart|midi?)$/i.test(f.name));
+  const { chart: c, mid } = CHB.chartOf(index), chart = c || mid;
   if (!chart) return { meta, diffs: {} };
   const raw = new Uint8Array(await file.slice(chart.off, chart.off + chart.len).arrayBuffer());
   const mini = { meta: [], files: [{ name: chart.name, data: CHB.xorData(raw, mask) }] };
@@ -637,14 +710,21 @@ async function libraryStats(files) {
   const rows = []; let bytes = 0, n = 0;
   for await (const f of libraryEntries(files)) {
     try {
-      const file = await f.getFile(); bytes += file.size;
-      const { meta, diffs, lyrics } = await readLite(file);
-      rows.push({ path: f.path, artist: meta.artist || '¿?', name: meta.name || f.name, genre: meta.genre || 'Sin género', g: diffs.guitar || [], insts: Object.keys(diffs), lyrics: !!lyrics });
-    } catch { rows.push({ path: f.path, artist: '¿?', name: f.name, genre: 'Sin género', g: [], insts: [], bad: true }); }
+      let meta, diffs, lyrics;
+      if (f.kind === 'folder') {
+        bytes += await f.size();
+        const sng = await folderSng(f, false);
+        meta = Object.fromEntries(sng.meta); diffs = CHB.sngDifficulties(sng); lyrics = CHB.hasLyrics(sng);
+      } else {
+        const file = await f.getFile(); bytes += file.size;
+        ({ meta, diffs, lyrics } = await readLite(file));
+      }
+      rows.push({ path: f.path, artist: meta.artist || '¿?', name: meta.name || f.name || f.path, genre: meta.genre || 'Sin género', g: diffs.guitar || [], insts: Object.keys(diffs), lyrics: !!lyrics });
+    } catch { rows.push({ path: f.path, artist: '¿?', name: f.name || f.path, genre: 'Sin género', g: [], insts: [], bad: true }); }
     if (++n % 20 === 0) out.innerHTML = `<div class="empty loading">Revisando tu biblioteca… ${n} canciones</div>`;
   }
   $('#statsLib').disabled = false;
-  if (!rows.length) { out.innerHTML = '<div class="empty">No encontré canciones .sng en esa carpeta.</div>'; return; }
+  if (!rows.length) { out.innerHTML = '<div class="empty">No encontré canciones en esa carpeta: ni archivos .sng ni carpetas con song.ini y notes.chart / notes.mid.</div>'; return; }
   const w = want();
   const full = rows.filter(r => w.every(k => r.g.includes(k)));
   const fixable = rows.filter(r => !w.every(k => r.g.includes(k)) && r.g.includes('X'));
@@ -684,7 +764,7 @@ function pickAudio(file) {
   else { $('#acName').value = base.trim(); }
   // a new song starts without the lyrics and image of the previous one
   $('#acLrc').value = ''; $('#acImage').value = ''; $('#acImageName').textContent = 'Elegir imagen o video';
-  $('#acGo').disabled = false;
+  $('#acGo').disabled = false; $('#acTempo').disabled = false;
 }
 const createdLevels = onStep => prepareFrom(created.song, Promise.resolve(created.bytes), onStep);
 async function createFromAudio() {
@@ -698,6 +778,7 @@ async function createFromAudio() {
       onProgress: (text, f) => { $('#acProgText').textContent = text; $('#acProgBar').style.width = (f * 100).toFixed(0) + '%'; },
     });
     Analytics.track('chart_from_audio', { song: `${artist} - ${name}` });
+    if (r.audio === 'song.wav') FX.toast('Tu navegador no pudo convertir el audio a Opus, así que quedó en WAV (pesa más y algunas versiones de Clone Hero podrían no reproducirlo). Para evitarlo, usa Chrome o Edge, o sube un MP3 u OGG.', 12000);
     created = { ...r, song: { md5: 'local-' + Date.now(), artist, name } };
     const md5 = created.song.md5;
     const say = t => { $('#acProgText').textContent = t; };
@@ -727,6 +808,22 @@ async function createFromAudio() {
     $('#acProgText').textContent = '✖ ' + (e.message || 'No se pudo leer ese audio. Prueba con un MP3 u OGG.');
   } finally { $('#acGo').disabled = false; }
 }
+// only the beats, for charting by hand in Moonscraper
+async function tempoFromAudio() {
+  if (!acFile) return;
+  const artist = $('#acArtist').value.trim() || 'Desconocido', name = $('#acName').value.trim() || 'Mi canción';
+  $('#acGo').disabled = $('#acTempo').disabled = true; $('#acProg').classList.remove('hidden');
+  try {
+    const r = await AutoChart.tempoMap(acFile, { name, artist, onProgress: (text, f) => { $('#acProgText').textContent = text; $('#acProgBar').style.width = (f * 100).toFixed(0) + '%'; } });
+    Analytics.track('tempo_map_from_audio', { song: `${artist} - ${name}` });
+    const link = deliver(r.folder + '.zip', new Blob([r.zip], { type: 'application/zip' }));
+    $('#acProgText').textContent = `¡Listo! ${Math.round(r.bpm)} BPM aprox., ${r.beats} pulsos marcados.`;
+    FX.toast(`<b>🎼 Mapa de tempo listo</b>${link ? ' ' + saveLink(link) : ''}<br><small>Descomprime <b>${esc(r.folder)}.zip</b> y abre <b>notes.chart</b> en Moonscraper: el pulso ya está marcado, solo falta poner las notas. Revisa el inicio y los cambios de ritmo, que es donde más se equivoca.</small>`, link ? 60000 : 12000);
+    FX.strum();
+  } catch (e) {
+    $('#acProgText').textContent = '✖ ' + (e.message || 'No se pudo leer ese audio. Prueba con un MP3 u OGG.');
+  } finally { $('#acGo').disabled = $('#acTempo').disabled = false; }
+}
 function previewCreated() {
   if (!created) return;
   Preview.open({
@@ -744,7 +841,7 @@ function previewCreated() {
 async function saveCreated() {
   if (!created || !(await folderReady())) return;
   try {
-    const { where, link } = await saveSong(fileName(created.song), (await createdLevels()).bytes);
+    const { where, link } = await saveOut(fileName(created.song), (await createdLevels()).bytes);
     if (link) { FX.toast(`<b>${esc(created.song.name)}</b> está lista ${saveLink(link)}`, 120000); return; }
     FX.sparks(); FX.strum();
     FX.toast(`<b>¡Rock on! 🤘</b> ${esc(created.song.name)} ${esc(where)}<br><small>En Clone Hero: Settings → General → Scan Songs</small>`, 6000);
@@ -753,7 +850,7 @@ async function saveCreated() {
 
 /* ---------- tabs ---------- */
 function tab(name) {
-  for (const t of ['search', 'top', 'packs', 'lib', 'audio']) {
+  for (const t of ['search', 'top', 'packs', 'lib', 'audio', 'mejoras']) {
     $('#view-' + t).classList.toggle('hidden', t !== name);
     $('#tab-' + t).classList.toggle('on', t === name);
   }
@@ -771,6 +868,7 @@ $('#chips').onclick = e => { const q = e.target.dataset.q; if (!q) return; $('#q
 $('#moreBtn').onclick = () => doSearch(state.args, state.limit + 20, false);
 $('#filter').onchange = () => { if (state.args) doSearch({ ...state.args }, state.limit, false); };
 $('#shareSearch').onclick = () => { const a = state.args; const [por, q] = Object.entries(a)[0]; share({ q, por }, `Canciones de ${q} para Clone Hero`); };
+$('#asFolder').onchange = () => savePrefs();
 for (const id of ['#needE', '#needM', '#needH', '#allInst', '#addLyrics', '#addDrums']) $(id).onchange = () => { render(); for (const el of document.querySelectorAll('[data-info]')) fillInfo(el); savePrefs(); };
 // the image button of any song row shares one file picker
 let bgTarget = null;
@@ -820,6 +918,7 @@ $('#tab-search').onclick = () => { tab('search'); };
 $('#tab-packs').onclick = () => { tab('packs'); };
 $('#tab-lib').onclick = () => tab('lib');
 $('#tab-audio').onclick = () => tab('audio');
+$('#tab-mejoras').onclick = () => tab('mejoras');
 $('#tab-top').onclick = () => { tab('top'); loadTop(); };
 $('#topPeriodWeek').onclick = () => loadTop('week');
 $('#topPeriodAll').onclick = () => loadTop('all');
@@ -828,6 +927,7 @@ $('#drop').addEventListener('dragover', e => { e.preventDefault(); $('#drop').cl
 $('#drop').addEventListener('dragleave', () => $('#drop').classList.remove('over'));
 $('#drop').addEventListener('drop', e => { e.preventDefault(); $('#drop').classList.remove('over'); pickAudio(e.dataTransfer.files[0]); });
 $('#acGo').onclick = createFromAudio;
+$('#acTempo').onclick = tempoFromAudio;
 $('#acImage').onchange = e => { $('#acImageName').textContent = e.target.files[0] ? e.target.files[0].name : 'Elegir imagen o video'; };
 $('#acPreview').onclick = previewCreated;
 $('#acDl').onclick = saveCreated;
@@ -849,6 +949,7 @@ $('#soundBtn').onclick = () => {
   if (p && p.knobs) knobs = { ...CHB.DEFAULT_KNOBS, ...p.knobs };
   if (p && p.lyrics !== undefined) $('#addLyrics').checked = p.lyrics;
   if (p && p.drums !== undefined) $('#addDrums').checked = p.drums;
+  if (p && p.folder !== undefined) $('#asFolder').checked = p.folder;
   showKnobs(); showBackground(); Analytics.init(); loadCommunity();
   $('#soundBtn').classList.toggle('on', FX.soundOn);
   $('#soundBtn').textContent = FX.soundOn ? '🔊 Sonido' : '🔇 Sonido';

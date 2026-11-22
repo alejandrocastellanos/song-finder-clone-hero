@@ -8,8 +8,9 @@ Busca canciones para Clone Hero en Chorus Encore y genera las dificultades que f
 
 ## Estructura
 
-- `core/chb-core.js`: motor compartido (búsqueda en Encore, lectura/escritura de `.sng`, generación de dificultades para `.chart` y `.mid`). Funciona en navegador y en Node 18+ sin dependencias.
+- `core/chb-core.js`: motor compartido (búsqueda en Encore, lectura/escritura de `.sng`, generación de dificultades para `.chart` y `.mid`). Si una canción trae los dos, usa el que lee Clone Hero: `notes.mid` (función `chartOf`, mismo orden que scan-chart). Funciona en navegador y en Node 18+ sin dependencias.
 - `cli/chb.js`: línea de comandos que usa el agente (`buscar`, `descargar`, `arreglar`, `carpetas`).
+- `cli/prueba-calidad.js`: compara los niveles que crea el motor con los Difícil/Medio/Fácil oficiales de 30 canciones de Rock Band. **Córrelo (`node cli/prueba-calidad.js`) antes de publicar cualquier cambio en la generación de niveles**; termina con error si la calidad baja del mínimo medido.
 - `index.html` + `app.js`: la app web.
 - `preview.js`: vista previa jugable (autopista de notas en canvas + audio con Web Audio) y perillas de los niveles creados.
 - `fx.js`: avisos, chispas y sonidos sintetizados.

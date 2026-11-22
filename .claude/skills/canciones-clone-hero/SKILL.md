@@ -57,27 +57,29 @@ Al terminar, dile cuántas se guardaron, cuáles tenían dificultades originales
 
 - Si quiere letra en las que no la traen, agrega `--letra` al descargar. Si no hay una versión con la misma duración, no se agrega: dilo.
 - Si quiere un fondo, agrega `--fondo "RUTA"` con una imagen (png, jpg) o un video (mp4, webm, avi, ogv, mpeg).
-- Crear batería desde el audio solo se puede en la web (`index.html`, opción "Crear la batería").
+- Crear batería desde el audio solo se puede en la web (`index.html`, opción "Crear la batería"; también sirve en *Mi biblioteca*).
+- Si su Clone Hero es anterior a la 1.1 (no lee `.sng`) o quiere editar en Moonscraper, descarga con `--editable` (carpeta con `song.ini` + chart + audio); en la web es la opción **📁 Guardar como carpeta**.
+- Si quiere chartear a mano una canción que no existe, en la web *Crear desde audio → 🎼 Solo mapa de tempo* le da el audio con el pulso marcado para Moonscraper.
 
 ## Si los niveles creados no le gustan
 
 Si dice que tienen demasiadas notas, muy pocas, que los acordes le cuestan o que extraña el naranja en Medio, vuelve a descargar esas canciones con ajustes (solo cambian los niveles creados, nunca los originales):
 
 - `--densidad -1` o `-2` para menos notas, `1` o `2` para más.
-- `--sin-acordes` para notas sueltas en Medio y Difícil.
+- `--sin-acordes` para notas sueltas también en Difícil (Fácil y Medio ya no llevan acordes).
 - `--naranja-medio` para permitir el naranja en Medio.
 
 Si quiere corregir nota por nota, descárgala con `--editable`: queda una carpeta con `song.ini`, el chart y el audio que se abre en **Moonscraper Chart Editor** (gratis) y que Clone Hero también lee.
 
 ## Arreglar una biblioteca existente
 
-Si la persona ya tiene canciones que solo traen Expert:
+Si la persona ya tiene canciones que solo traen Expert (sirve para archivos `.sng` y para canciones en carpeta con `song.ini` + `notes.chart` o `notes.mid`):
 
 ```
 node cli/chb.js arreglar --carpeta "RUTA" --niveles facil,medio,dificil
 ```
 
-Guarda una copia de cada canción modificada como `*.sng.original`. Pide confirmación antes de correrlo y di cuántas canciones hay en la carpeta.
+De cada archivo que cambia guarda una copia `.original` (`cancion.sng.original` o `notes.chart.original`). Pide confirmación antes de correrlo y di cuántas canciones hay en la carpeta.
 
 ## Qué saber
 
