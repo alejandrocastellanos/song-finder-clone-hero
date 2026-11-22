@@ -43,7 +43,7 @@ Las llamas 🔥 (de 0 a 6) indican qué tan intensa es la canción.
 - **Sonido**: botón arriba a la derecha para activar rasgueos de guitarra al buscar y al terminar descargas.
 - **🎤 Letra**: si la canción no la trae, se busca en [LRCLIB](https://lrclib.net) y se agrega con tiempos, solo en tu copia. LRCLIB sincroniza por línea, así que los tiempos de cada palabra son aproximados. Si no hay una versión con la misma duración, no se agrega, para no quedar desfasada.
 - **🥁 Batería**: si la canción no trae batería, se crea desde el audio con sus 4 niveles. Marca *Crear la batería* y se crea al descargar (o en *Mi biblioteca → Revisar y arreglar*). Usa el pulso de la propia canción y separa lo percusivo del resto del sonido. Sale mejor si la canción trae su pista de batería separada. Es un borrador automático: el bombo y los platillos salen bien; el redoblante a veces aparece de más.
-- **🖼 Fondo**: elige una imagen (JPG, PNG) o un video (MP4, WEBM, AVI, OGV, MPEG) y queda dentro de cada canción que guardes. Para verlo, activa los fondos de canción en las opciones de Clone Hero.
+- **🖼 Fondo**: en cada canción, elige una imagen (JPG, PNG) o un video (MP4, WEBM, AVI, OGV, MPEG) y queda dentro de esa canción. Para verlo, activa los fondos de canción en las opciones de Clone Hero.
 - **Packs por género y por artista**: Metal, Punk, Grunge, Pop, Metallica, Queen, Soda Stereo y muchos más.
 - **Instalarla**: publicada en internet (HTTPS), Chrome y Edge ofrecen instalarla como app con su propio ícono.
 

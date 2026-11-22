@@ -117,7 +117,6 @@ function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knob
 /* ---------- extras: lyrics, drums and background ---------- */
 const askedFor = {};        // md5 -> { lyrics, drums } requested from the preview for one song
 const enrichedCache = new Map();
-let bgMedia = null;         // { name, data } for all songs that have no image of their own
 const songBg = {};          // md5 -> { name, data } chosen for one song
 
 function extrasFlags(s) {
@@ -170,7 +169,7 @@ async function prepareFrom(s, rawPromise, onStep) {
   const added = [...out.added];
   if (extras.drums === 'added' || extras.drums === 'stems') added.push('X:drums');
   let bytes = out.bytes;
-  const media = songBg[s.md5] || bgMedia;
+  const media = songBg[s.md5];
   if (media) bytes = CHB.writeSng(CHB.setBackground(CHB.readSng(bytes), media));
   return { bytes, added, extras, hasLyrics: CHB.hasLyrics(CHB.readSng(bytes)) };
 }
@@ -185,17 +184,13 @@ function extrasText(x) {
   return parts.join(' · ');
 }
 
-// md5 given: the image is only for that song; otherwise it's the one for all songs without their own
+// the image or video is only for that one song
 async function chooseBackground(file, md5) {
-  if (!file) return;
+  if (!file || !md5) return;
   if (!/\.(png|jpe?g|mp4|avi|webm|vp8|ogv|mpeg)$/i.test(file.name)) { FX.toast('Formato no válido. Usa JPG, PNG, MP4, WEBM, AVI, OGV o MPEG.'); return; }
   const media = { name: file.name, data: new Uint8Array(await file.arrayBuffer()) };
-  if (md5) { songBg[md5] = media; showSongBg(md5); } else { bgMedia = media; showBackground(); }
+  songBg[md5] = media; showSongBg(md5);
   if (file.size > 200 * 1048576) FX.toast('Ese video pesa mucho: se copia dentro de la canción.', 6000);
-}
-function showBackground() {
-  $('#bgLabel').textContent = bgMedia ? bgMedia.name : 'ninguna (cada canción usa la suya)';
-  $('#bgClear').classList.toggle('hidden', !bgMedia);
 }
 const bgButton = md5 => {
   if (songBg[md5]) return `<span class="song-bg" data-bg="${esc(md5)}"><button class="bg-btn on" title="Cambiar la imagen de esta canción">🖼 ${esc(songBg[md5].name.slice(0, 18))}</button><button class="bg-x" title="Quitar la imagen">✕</button></span>`;
@@ -881,8 +876,6 @@ document.addEventListener('click', e => {
   if (e.target.closest('.bg-btn')) { bgTarget = md5; $('#songBgFile').click(); }
 });
 $('#songBgFile').onchange = e => { chooseBackground(e.target.files[0], bgTarget); e.target.value = ''; };
-$('#bgFile').onchange = e => { chooseBackground(e.target.files[0]); e.target.value = ''; };
-$('#bgClear').onclick = () => { bgMedia = null; showBackground(); };
 $('#libInput').onchange = e => {
   const files = [...e.target.files];
   if (e.target.dataset.action === 'fix') fixLibrary(files); else libraryStats(files);
@@ -952,7 +945,7 @@ $('#soundBtn').onclick = () => {
   if (p && p.lyrics !== undefined) $('#addLyrics').checked = p.lyrics;
   if (p && p.drums !== undefined) $('#addDrums').checked = p.drums;
   if (p && p.folder !== undefined) $('#asFolder').checked = p.folder;
-  showKnobs(); showBackground(); Analytics.init(); loadCommunity();
+  showKnobs(); Analytics.init(); loadCommunity();
   $('#soundBtn').classList.toggle('on', FX.soundOn);
   $('#soundBtn').textContent = FX.soundOn ? '🔊 Sonido' : '🔇 Sonido';
   showFolder(); renderPacks(); renderSuggestions(); render();
