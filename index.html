@@ -356,6 +356,44 @@
     .pv-diff { margin-left: 0; }
     .pv-vol { display: none; }
   }
+
+  /* ---------- visual pass (nov 2026) ---------- */
+  /* keyboard focus you can see, in the stage's fire color */
+  :where(button, a, input, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--fire3); outline-offset: 2px; }
+  /* Descargar is the main thing a song row does, so it gets the fire button; the image button steps back */
+  .song .dl { font-family: var(--display); font-weight: 400; font-size: 18px; letter-spacing: 1.2px; padding: 8px 18px; color: #1b0700; border: 0;
+    background: linear-gradient(180deg, var(--fire3), var(--fire2) 45%, var(--fire1)); box-shadow: 0 0 0 1px #7a2100, 0 4px 14px rgba(255, 61, 0, .3), inset 0 1px 0 rgba(255,255,255,.5); }
+  .song .dl:hover:not(:disabled) { box-shadow: 0 0 0 1px #7a2100, 0 0 22px rgba(255, 110, 0, .65), inset 0 1px 0 rgba(255,255,255,.5); }
+  .song .bg-btn { background: transparent; font-size: 13px; padding: 8px 12px; color: var(--muted); }
+  /* download settings fold away; the summary line says what's chosen */
+  .settings-more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; color: var(--muted); font-size: 14px; }
+  .settings-more > summary::-webkit-details-marker { display: none; }
+  .settings-more > summary::before { content: "▸"; color: var(--fire2); transition: transform .15s; }
+  .settings-more[open] > summary::before { transform: rotate(90deg); }
+  .settings-more > summary b { color: var(--text); font-weight: 600; }
+  .settings-more > summary .set-sum { color: var(--fire3); }
+  .drum-help > summary { cursor: pointer; color: var(--muted); }
+  .drum-help > summary b { color: var(--text); }
+  .drum-help p { margin: 6px 0 0; }
+  @media (max-width: 900px) {
+    /* one row of tabs that slides sideways instead of five rows of big buttons */
+    .tabs { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; padding: 4px 16px 6px; margin: 0 -16px 12px; scrollbar-width: none; scroll-snap-type: x proximity; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tabs button { flex: none; font-size: 17px; padding: 7px 16px; scroll-snap-align: start; }
+  }
+  @media (max-width: 640px) {
+    .stage { padding-top: 10px; }
+    .tagline { font-size: 14px; letter-spacing: 1.2px; }
+    .highway { height: 64px; margin-top: 10px; }
+    .counter { margin-bottom: 12px; padding: 4px 16px; font-size: 17px; }
+    .counter b { font-size: 28px; }
+    /* every action on one line: elegir, image, Ver, Descargar (the last two share the width) */
+    .actions > .row { flex: 1; flex-wrap: nowrap; justify-content: flex-end; }
+    .actions .pv-btn, .actions .dl { flex: 1; }
+    .song { align-items: start; }
+    .song .bg-txt { display: none; }
+    .song .bg-btn { padding: 8px 11px; }
+  }
   @media (prefers-reduced-motion: reduce) {
     .road, .note, .empty.loading::before, .qtrack i::after { animation: none; }
     .note { opacity: 1; top: 40%; }
@@ -399,7 +437,10 @@
       </div>
       <button id="pickFolder">Elegir carpeta Songs</button>
     </div>
-    <div class="row" style="margin-top:14px">
+    <input type="file" id="songBgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>
+    <details class="settings-more" id="setMore" open>
+    <summary><b>⚙️ Ajustes de descarga</b> <span class="set-sum" id="setSum"></span></summary>
+    <div class="row" style="margin-top:12px">
       <span class="sub">Niveles que necesito:</span>
       <label class="chk lv-E"><input type="checkbox" id="needE" checked> Fácil</label>
       <label class="chk lv-M"><input type="checkbox" id="needM" checked> Medio</label>
@@ -411,10 +452,10 @@
       <span class="sub">Si le falta:</span>
       <label class="chk"><input type="checkbox" id="addLyrics" checked> 🎤 Agregar la letra</label>
       <label class="chk" title="Tarda unos segundos más por canción"><input type="checkbox" id="addDrums"> 🥁 Crear la batería</label>
-      <input type="file" id="songBgFile" accept="image/png,image/jpeg,video/*,.mp4,.webm,.avi,.ogv,.mpeg,.vp8" hidden>
     </div>
-    <p class="sub drum-help">🥁 <b>¿Cómo creo la batería?</b> Marca <b>Crear la batería</b> y se crea sola al descargar las canciones que no la traen (en <b>▶ Ver</b> la pruebas antes). Para tu biblioteca, márcala y usa <b>Mi biblioteca → Revisar y arreglar</b>. Para una canción que nadie ha charteado, usa <b>🧪 Crear desde audio</b>.</p>
+    <details class="sub drum-help"><summary>🥁 <b>¿Cómo creo la batería?</b></summary><p>Marca <b>Crear la batería</b> y se crea sola al descargar las canciones que no la traen (en <b>▶ Ver</b> la pruebas antes). Para tu biblioteca, márcala y usa <b>Mi biblioteca → Revisar y arreglar</b>. Para una canción que nadie ha charteado, usa <b>🧪 Crear desde audio</b>.</p></details>
     <div class="knobs-info" id="knobsInfo"></div>
+    </details>
   </div>
 
   <section id="view-mejoras" class="hidden">
@@ -435,6 +476,7 @@
             <li><b>Canciones con dos charts:</b> si traen notes.chart y notes.mid, los niveles se crean en el que lee Clone Hero (notes.mid).</li>
             <li>Aviso claro cuando el navegador no deja usar una carpeta, y guía de cómo crear la batería.</li>
             <li>Al publicar una versión nueva, la página ya no mezcla archivos nuevos y viejos.</li>
+            <li><b>Diseño más cómodo:</b> en el celular el buscador aparece en la primera pantalla (las pestañas van en una fila que se desliza y los ajustes de descarga se pliegan con un resumen), Descargar se destaca en cada canción y se ve el foco al navegar con teclado.</li>
             <li>Pack nuevo: <b>Rock Español Clásico</b> (Barón Rojo, Extremoduro, Héroes del Silencio, Saratoga y más).</li>
           </ul>
         </div>

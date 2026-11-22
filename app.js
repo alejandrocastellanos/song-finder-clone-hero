@@ -112,6 +112,16 @@ function showKnobs() {
     + (custom ? ' <button class="ghost chip" id="knobsReset">Restablecer</button>' : ' <span class="sub">(ajústalos desde ▶ Ver)</span>');
   const r = $('#knobsReset'); if (r) r.onclick = () => setKnobs(CHB.DEFAULT_KNOBS);
 }
+// one line with what the download settings say, shown while they're folded
+function showSettingsSummary() {
+  const lv = want().map(k => ({ E: 'Fácil', M: 'Medio', H: 'Difícil' }[k]));
+  const parts = [lv.length ? lv.join(', ') : 'ningún nivel'];
+  if ($('#allInst').checked) parts.push('todos los instrumentos');
+  if ($('#addLyrics').checked) parts.push('letra');
+  if ($('#addDrums').checked) parts.push('batería');
+  if ($('#asFolder').checked) parts.push('en carpeta');
+  $('#setSum').textContent = parts.join(' · ');
+}
 function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knobs, lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked, folder: asFolder() }); }
 
 /* ---------- extras: lyrics, drums and background ---------- */
@@ -193,9 +203,9 @@ async function chooseBackground(file, md5) {
   if (file.size > 200 * 1048576) FX.toast('Ese video pesa mucho: se copia dentro de la canción.', 6000);
 }
 const bgButton = md5 => {
-  if (songBg[md5]) return `<span class="song-bg" data-bg="${esc(md5)}"><button class="bg-btn on" title="Cambiar la imagen de esta canción">🖼 ${esc(songBg[md5].name.slice(0, 18))}</button><button class="bg-x" title="Quitar la imagen">✕</button></span>`;
+  if (songBg[md5]) return `<span class="song-bg" data-bg="${esc(md5)}"><button class="bg-btn on" title="Cambiar la imagen de esta canción">🖼 <span class="bg-txt">${esc(songBg[md5].name.slice(0, 18))}</span></button><button class="bg-x" title="Quitar la imagen">✕</button></span>`;
   const info = infoLoaded[md5], has = info && (info.background || info.video);
-  return `<span class="song-bg" data-bg="${esc(md5)}"><button class="bg-btn" title="${has ? 'Esta canción ya trae fondo; la tuya lo reemplaza' : 'Ponerle una imagen o video de fondo a esta canción'}">🖼 ${has ? 'Cambiar imagen' : 'Agregar imagen'}</button></span>`;
+  return `<span class="song-bg" data-bg="${esc(md5)}"><button class="bg-btn" title="${has ? 'Esta canción ya trae fondo; la tuya lo reemplaza' : 'Ponerle una imagen o video de fondo a esta canción'}">🖼 <span class="bg-txt">${has ? 'Cambiar imagen' : 'Agregar imagen'}</span></button></span>`;
 };
 function showSongBg(md5) {
   for (const el of document.querySelectorAll(`[data-bg="${md5}"]`)) el.outerHTML = bgButton(md5);
@@ -865,8 +875,8 @@ $('#chips').onclick = e => { const q = e.target.dataset.q; if (!q) return; $('#q
 $('#moreBtn').onclick = () => doSearch(state.args, state.limit + 20, false);
 $('#filter').onchange = () => { if (state.args) doSearch({ ...state.args }, state.limit, false); };
 $('#shareSearch').onclick = () => { const a = state.args; const [por, q] = Object.entries(a)[0]; share({ q, por }, `Canciones de ${q} para Clone Hero`); };
-$('#asFolder').onchange = () => savePrefs();
-for (const id of ['#needE', '#needM', '#needH', '#allInst', '#addLyrics', '#addDrums']) $(id).onchange = () => { render(); for (const el of document.querySelectorAll('[data-info]')) fillInfo(el); savePrefs(); };
+$('#asFolder').onchange = () => { savePrefs(); showSettingsSummary(); };
+for (const id of ['#needE', '#needM', '#needH', '#allInst', '#addLyrics', '#addDrums']) $(id).onchange = () => { showSettingsSummary(); render(); for (const el of document.querySelectorAll('[data-info]')) fillInfo(el); savePrefs(); };
 // the image button of any song row shares one file picker
 let bgTarget = null;
 document.addEventListener('click', e => {
@@ -945,7 +955,11 @@ $('#soundBtn').onclick = () => {
   if (p && p.lyrics !== undefined) $('#addLyrics').checked = p.lyrics;
   if (p && p.drums !== undefined) $('#addDrums').checked = p.drums;
   if (p && p.folder !== undefined) $('#asFolder').checked = p.folder;
-  showKnobs(); Analytics.init(); loadCommunity();
+  showKnobs(); showSettingsSummary(); Analytics.init(); loadCommunity();
+  // folded on phones so the search shows up first; whatever the person chooses afterwards is remembered
+  const folded = store.get('settingsOpen', null);
+  $('#setMore').open = folded === null ? !matchMedia('(max-width: 640px)').matches : folded;
+  $('#setMore').addEventListener('toggle', () => store.set('settingsOpen', $('#setMore').open));
   $('#soundBtn').classList.toggle('on', FX.soundOn);
   $('#soundBtn').textContent = FX.soundOn ? '🔊 Sonido' : '🔇 Sonido';
   showFolder(); renderPacks(); renderSuggestions(); render();
