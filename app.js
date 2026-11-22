@@ -854,6 +854,8 @@ function tab(name) {
     $('#view-' + t).classList.toggle('hidden', t !== name);
     $('#tab-' + t).classList.toggle('on', t === name);
   }
+  // the download settings don't apply to the list of changes
+  $('#settings').classList.toggle('hidden', name === 'mejoras');
 }
 
 /* ---------- events ---------- */
