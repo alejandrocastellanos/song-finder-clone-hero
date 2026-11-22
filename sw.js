@@ -1,7 +1,7 @@
 /* Caches the app itself so it opens offline and installs as an app. Songs and searches always go to the network. */
 // named after the app version (the badge in index.html), so each release replaces the cache
-const CACHE = 'chb-v1.5.0';
-const SHELL = ['./', 'index.html', 'app.js', 'analytics.js', 'community.js', 'core/chb-core.js', 'packs.js', 'fx.js', 'preview.js', 'autochart.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'chb-v1.6.0';
+const SHELL = ['./', 'index.html', 'i18n.js', 'app.js', 'analytics.js', 'community.js', 'core/chb-core.js', 'packs.js', 'fx.js', 'preview.js', 'autochart.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
   // 'reload' skips the browser's HTTP cache, so a new version never stores the old files

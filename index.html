@@ -49,6 +49,12 @@
   .topbar { position: absolute; top: 14px; right: 16px; display: flex; gap: 8px; z-index: 2; }
   .topbar button { font-size: 13px; padding: 6px 12px; border-radius: 999px; }
   .topbar button.on { border-color: var(--fire2); color: var(--fire3); }
+  /* ES | EN: one pill split in two, the language in use lit like the sound button */
+  .topbar .lang { display: flex; }
+  .topbar .lang button { border-radius: 0; padding: 6px 10px; font-weight: 600; letter-spacing: .04em; }
+  .topbar .lang button:first-child { border-radius: 999px 0 0 999px; }
+  .topbar .lang button:last-child { border-radius: 0 999px 999px 0; margin-left: -1px; }
+  .topbar .lang button.on { position: relative; z-index: 1; }
   /* the version sits small beside the name and opens the list of changes (bump it with every release: see CLAUDE.md) */
   .brand { display: inline-flex; align-items: flex-start; gap: 10px; }
   .ver { margin-top: .9em; padding: 2px 9px; border-radius: 999px; font: 600 12px var(--body); letter-spacing: .5px; color: var(--muted); background: rgba(0,0,0,.35); border: 1px solid var(--line); }
@@ -409,8 +415,8 @@
 </head>
 <body>
 <header class="stage">
-  <div class="topbar"><button id="soundBtn" title="Sonidos de guitarra al buscar y al terminar descargas">🔇 Sonido</button></div>
-  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.5.0</button></div>
+  <div class="topbar"><span class="lang" role="group" aria-label="Idioma / Language" data-no-i18n><button data-lang="es" title="Español">ES</button><button data-lang="en" title="English">EN</button></span><button id="soundBtn" title="Sonidos de guitarra al buscar y al terminar descargas">🔇 Sonido</button></div>
+  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.6.0</button></div>
   <p class="tagline">Busca cualquier canción para Clone Hero · <b>si no trae tu nivel, te lo creamos</b></p>
   <div class="highway" aria-hidden="true">
     <div class="road">
@@ -470,6 +476,12 @@
       <h2>✨ Mejoras</h2>
       <p class="sub" style="margin-top:0">Todo lo que ha cambiado desde que se lanzó CH Buscador, lo más nuevo primero. Muchas de estas mejoras salieron de comentarios de la comunidad: ¡gracias!</p>
       <div class="changes">
+        <div>
+          <h3>21 de noviembre de 2026 <small>v1.6.0</small></h3>
+          <ul>
+            <li><b>Inglés o español:</b> toda la página se puede ver en inglés. Cámbialo con ES | EN arriba a la derecha; se recuerda para la próxima vez.</li>
+          </ul>
+        </div>
         <div>
           <h3>21 de noviembre de 2026 <small>v1.5.0</small></h3>
           <ul>
@@ -655,6 +667,7 @@
 
 <footer>Canciones de <a href="https://www.enchor.us" target="_blank" rel="noopener">Chorus Encore</a> · los charts son obra de sus autores · los niveles creados son automáticos</footer>
 
+<script src="i18n.js"></script>
 <script src="analytics.js"></script>
 <script src="community.js"></script>
 <script src="core/chb-core.js"></script>

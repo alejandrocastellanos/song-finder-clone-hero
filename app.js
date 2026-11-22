@@ -573,6 +573,7 @@ function setUrl(params) {
   try { history.replaceState(null, '', u); } catch { }
 }
 async function share(params, title) {
+  title = I18N.t(title);
   const u = new URL(location.href);
   u.search = new URLSearchParams(params).toString();
   const url = u.toString();
@@ -580,7 +581,7 @@ async function share(params, title) {
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title, url });
     else { await navigator.clipboard.writeText(url); FX.toast('🔗 Enlace copiado. ¡Pásaselo a quien quieras!'); }
-  } catch { prompt('Copia este enlace:', url); }
+  } catch { prompt(I18N.t('Copia este enlace:'), url); }
 }
 
 /* ---------- backdrop from album art ---------- */
