@@ -173,17 +173,22 @@ const AutoChart = (() => {
     return { beats: beats.map(b => b / fps + G2.latency + 0.015), bpm };
   }
 
-  async function analyze(x, duration, sensitivity, say = () => { }) {
+  /* opts.beats: beat times (s) to follow instead of finding them, so the notes land on a song's own tempo map;
+     opts.bass: read a bass line (lower range, onsets from the low end too, no chords) */
+  async function analyze(x, duration, sensitivity, say = () => { }, opts = {}) {
+    const LO = opts.bass ? 28 : 40, HI = opts.bass ? 60 : 76;
     const G2 = await semigram(x, 2048, 256, f => say('Buscando cada golpe de la canción…', 0.15 + f * 0.3));
     const G4 = await semigram(x, 4096, 512, f => say('Escuchando las notas…', 0.45 + f * 0.25));
     say('Siguiendo el pulso…', 0.72); await tick();
     const nov = novelty(G2), fps = G2.fps, lat = G2.latency + 0.015;
-    const { beats: beatsSec, bpm } = trackBeats(G2, nov);
+    const tracked = opts.beats && opts.beats.length > 8 ? null : trackBeats(G2, nov);
+    const beatsSec = tracked ? tracked.beats : opts.beats;
+    const bpm = tracked ? tracked.bpm : Math.round(60 * (beatsSec.length - 1) / Math.max(1e-3, beatsSec[beatsSec.length - 1] - beatsSec[0]));
     const grid = beatGrid(beatsSec, duration);
 
     say('Buscando los riffs que se repiten…', 0.8); await tick();
     // strength of each 16th: the biggest normalised jump within 25 ms of it
-    const c = nov.pitched, mean = movingMean(c, Math.round(fps));
+    const c = opts.bass ? Float32Array.from(nov.pitched, (v, i) => v + nov.low[i]) : nov.pitched, mean = movingMean(c, Math.round(fps));
     let su = 0, s2 = 0; for (const v of c) { su += v; s2 += v * v; }
     const std = Math.sqrt(Math.max(1e-9, s2 / c.length - (su / c.length) ** 2));
     const nSlots = (grid.beats.length - 1) * 4, slotT = new Float64Array(nSlots + 1), str = new Float32Array(nSlots);
@@ -201,7 +206,7 @@ const AutoChart = (() => {
       for (let k = 0; k < 16; k++) f.push(Math.max(0, str[b * 16 + k]));
       for (let q = 0; q < 8; q++) {
         const i = b * 16 + q * 2, v = vecAt(G4, slotT[i], slotT[i + 2]), fl = floorOf(v), ch = new Float32Array(12);
-        for (let m = 40; m < 88; m++) ch[m % 12] += Math.max(0, v[m - M0] - fl);
+        for (let m = LO; m < LO + 48; m++) ch[m % 12] += Math.max(0, v[m - M0] - fl);
         for (const x of ch) f.push(x * 0.5);
       }
       const n = Math.sqrt(dot(f, f)) || 1;
@@ -232,7 +237,7 @@ const AutoChart = (() => {
         const i = b * 16 + k, v = vecAt(G4, slotT[i] + 0.03, Math.min(slotT[i] + 0.25, slotT[Math.min(nSlots, i + 2)]));
         for (let x = 0; x < NB; x++) acc[x] += v[x] / groups[g].length;
       }
-      return { p: salience(acc), v: shape(acc) };
+      return { p: salience(acc, LO, HI), v: shape(acc) };
     }));
     const allP = info.flatMap((list, g) => list.map(n => ({ p: n.p, w: groups[g].length })));
     const pct = p => { let below = 0, tot = 0; for (const a of allP) { tot += a.w; if (a.p < p) below += a.w; } return tot ? below / tot : 0.5; };
@@ -258,9 +263,9 @@ const AutoChart = (() => {
     });
     // accents on the beat become two-button chords (two apart, the most common shape in official charts)
     const strong = notes.map(n => n.s).sort((a, b) => a - b)[Math.floor(notes.length * 0.88)] ?? Infinity;
-    for (const n of notes) if (n.s >= strong && n.beat) n.lanes.push(n.lanes[0] <= 2 ? n.lanes[0] + 2 : n.lanes[0] - 2);
+    if (!opts.bass) for (const n of notes) if (n.s >= strong && n.beat) n.lanes.push(n.lanes[0] <= 2 ? n.lanes[0] + 2 : n.lanes[0] - 2);
     // sustains where the sound keeps ringing until a later note
-    const level = (a, b) => { const v = vecAt(G4, a, b); let e = 0; for (let m = 40; m < 84; m++) e += v[m - M0]; return e / 44; };
+    const level = (a, b) => { const v = vecAt(G4, a, b); let e = 0; for (let m = LO; m < LO + 44; m++) e += v[m - M0]; return e / 44; };
     for (let i = 0; i < notes.length; i++) {
       const n = notes[i], next = notes[i + 1], gap = (next ? next.t : n.t + 2) - n.t, gapTicks = (next ? next.tick : n.tick + 4 * RES) - n.tick;
       n.len = 0;
@@ -438,6 +443,44 @@ const AutoChart = (() => {
     return { fromStems: stems.length > 0, hits: hits.length };
   }
 
+  /* Adds an Expert bass or keys track to a parsed .sng that has the instrument's own audio (bass.ogg, keys.opus…)
+     but no notes for it. The notes follow the song's tempo map, so they line up with the other instruments.
+     Rock Band conversions keep the bass in rhythm.ogg: it's used for the bass when there's no bass audio and no
+     rhythm part, and it sounds low. Checked against the official bass of 6 Rock Band songs: F 0.69-0.88.
+     Returns { notes } and mutates sng, or null when there is no usable audio for it. */
+  const PART_AUDIO = { bass: /^bass\.(ogg|opus|mp3|wav)$/i, keys: /^keys\.(ogg|opus|mp3|wav)$/i }, RHYTHM_AUDIO = /^rhythm\.(ogg|opus|mp3|wav)$/i;
+  function partAudio(sng, inst) {
+    const own = sng.files.filter(f => PART_AUDIO[inst].test(f.name));
+    if (own.length || inst !== 'bass' || CHB.hasPart(sng, 'rhythm')) return { files: own, rhythm: false };
+    return { files: sng.files.filter(f => RHYTHM_AUDIO.test(f.name)), rhythm: true };
+  }
+  const hasPartAudio = (sng, inst) => partAudio(sng, inst).files.length > 0;
+  // how much of the sound stays under 250 Hz (about 1.1 for a bass, 0.45-1 for guitars)
+  async function lowShare(x) {
+    const n = Math.min(x.length, SR * 90), buf = new AudioBuffer({ length: n, sampleRate: SR, numberOfChannels: 1 });
+    buf.copyToChannel(x.subarray(0, n), 0);
+    const off = new OfflineAudioContext(1, n, SR), src = off.createBufferSource(), lp = off.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 250; src.buffer = buf; src.connect(lp); lp.connect(off.destination); src.start();
+    const y = (await off.startRendering()).getChannelData(0);
+    let a = 0, b = 0; for (let i = 0; i < n; i += 4) { a += y[i] * y[i]; b += x[i] * x[i]; }
+    return b ? Math.sqrt(a / b) : 0;
+  }
+  async function addPart(sng, inst, onProgress = () => { }) {
+    const { files, rhythm } = partAudio(sng, inst);
+    if (!files.length) return null;
+    const mono = await mixToMono(files);
+    // an almost silent file is a placeholder, not a part
+    let e = 0, k = 0; for (let i = 0; i < mono.length; i += 64, k++) e += mono[i] * mono[i];
+    if (!k || Math.sqrt(e / k) < 0.004) return null;
+    if (rhythm && (await lowShare(mono)) < 0.9) return null;   // a rhythm guitar, not a bass
+    const duration = mono.length / SR;
+    // from its own track the notes are clear, so it can keep fast lines (min. 0.16 s apart)
+    const { notes, grid } = await analyze(mono, duration, 3, onProgress, { beats: chartBeats(sng, duration), bass: inst === 'bass' });
+    if (notes.length < 16) return null;
+    const out = notes.map(n => ({ t: n.t, end: n.len ? grid.toSec(n.tick + n.len) : 0, lanes: n.lanes }));
+    return CHB.addFretTrack(sng, inst, out) ? { notes: notes.length } : null;
+  }
+
   /* ---------- Opus encoder (WebCodecs) in an Ogg container, for formats Clone Hero may not play ---------- */
   const OGG_CRC = (() => {
     const t = new Uint32Array(256);
@@ -591,5 +634,5 @@ const AutoChart = (() => {
     return { bytes: CHB.writeSng(parsed), bpm, notes: notes.length, duration, drumHits: drumHitCount, audio: audio.name };
   }
 
-  return { create, tempoMap, addDrums, drumHits, _analyze: analyze };
+  return { create, tempoMap, addDrums, addPart, hasPartAudio, drumHits, _analyze: analyze };
 })();

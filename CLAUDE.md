@@ -25,7 +25,7 @@ Cuál subir: **PARCHE** para correcciones sin funciones nuevas; **MENOR** para f
 - `fx.js`: avisos, chispas y sonidos sintetizados.
 - `i18n.js`: inglés/español (botón ES | EN). La web se escribe en español; en inglés cambia cada texto por su versión del diccionario `EN` (o de los patrones `RX` si lleva números o nombres). **Todo texto nuevo de la interfaz necesita su entrada en inglés ahí.**
 - `packs.js`: listas de canciones armadas a mano (id del chart en Chorus Encore).
-- `autochart.js`: experimental, crea un chart Expert desde un audio (flujo espectral para los golpes, seguimiento de pulso por programación dinámica, tono por HPS para los botones). También crea batería desde el audio. Solo navegador.
+- `autochart.js`: experimental, crea un chart Expert desde un audio (flujo espectral para los golpes, seguimiento de pulso por programación dinámica, tono por HPS para los botones). También crea batería desde el audio, y bajo o teclado desde su pista aparte (`addPart`; para el bajo usa `rhythm.ogg` si suena grave, como en las conversiones de Rock Band). Solo navegador.
 - `analytics.js`: Google Analytics 4; no hace nada hasta poner `GA_ID` y solo carga si la persona acepta.
 - `community.js` + `supabase/schema.sql`: contador, lo más descargado y valoraciones en Supabase; solo escribe desde la página publicada.
 - SEO: título, descripción, Open Graph (`og-image.jpg`) y datos estructurados en el `<head>` de `index.html`; preguntas frecuentes al final de la página; `pageMeta()` en `app.js` pone título y descripción de cada búsqueda y pack. **Si agregas o cambias packs, actualiza `sitemap.xml`.**

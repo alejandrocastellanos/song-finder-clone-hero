@@ -113,6 +113,7 @@ function showKnobs() {
     + (custom ? ' <button class="ghost chip" id="knobsReset">Restablecer</button>' : ' <span class="sub">(ajústalos desde ▶ Ver)</span>');
   const r = $('#knobsReset'); if (r) r.onclick = () => setKnobs(CHB.DEFAULT_KNOBS);
 }
+const LIB_MIRROR = [['#addLyrics', '#libLyrics'], ['#addDrums', '#libDrums'], ['#addParts', '#libParts']];
 // one line with what the download settings say, shown while they're folded
 function showSettingsSummary() {
   const lv = want().map(k => ({ E: 'Fácil', M: 'Medio', H: 'Difícil' }[k]));
@@ -121,10 +122,13 @@ function showSettingsSummary() {
   if ($('#allInst').checked) parts.push('todos los instrumentos');
   if ($('#addLyrics').checked) parts.push('letra');
   if ($('#addDrums').checked) parts.push('batería');
+  if ($('#addParts').checked) parts.push('bajo y teclado');
   if ($('#asFolder').checked) parts.push('en carpeta');
   $('#setSum').textContent = parts.join(' · ');
+  // the same options are shown in My library, next to the button that uses them
+  for (const [from, to] of LIB_MIRROR) $(to).checked = $(from).checked;
 }
-function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knobs, lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked, folder: asFolder() }); }
+function savePrefs() { kv('prefs', { w: want(), all: $('#allInst').checked, knobs, lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked, parts: $('#addParts').checked, folder: asFolder() }); }
 
 /* ---------- extras: lyrics, drums and background ---------- */
 const askedFor = {};        // md5 -> { lyrics, drums } requested from the preview for one song
@@ -133,13 +137,13 @@ const songBg = {};          // md5 -> { name, data } chosen for one song
 
 function extrasFlags(s) {
   const a = askedFor[s.md5] || {};
-  return { lyrics: $('#addLyrics').checked || !!a.lyrics, drums: $('#addDrums').checked || !!a.drums };
+  return { lyrics: $('#addLyrics').checked || !!a.lyrics, drums: $('#addDrums').checked || !!a.drums, parts: $('#addParts').checked };
 }
 
 // returns { bytes, extras: { lyrics: 'added'|'have'|'none', drums: 'added'|'stems'|'have'|'none' } }
 async function enrichBytes(s, raw, flags, onStep = () => { }) {
   const extras = {};
-  if (!flags.lyrics && !flags.drums) return { bytes: raw, extras };
+  if (!flags.lyrics && !flags.drums && !flags.parts) return { bytes: raw, extras };
   const sng = CHB.readSng(raw), meta = Object.fromEntries(sng.meta);
   let changed = false;
   if (flags.lyrics) {
@@ -160,11 +164,18 @@ async function enrichBytes(s, raw, flags, onStep = () => { }) {
       catch { extras.drums = 'none'; }
     }
   }
+  // bass and keys from their own audio, when the song brings it but no notes for them
+  if (flags.parts) for (const inst of ['bass', 'keys']) {
+    if (CHB.hasPart(sng, inst) || !AutoChart.hasPartAudio(sng, inst)) continue;
+    onStep(inst === 'bass' ? 'Creando el bajo…' : 'Creando el teclado…');
+    try { extras[inst] = (await AutoChart.addPart(sng, inst)) ? 'added' : 'none'; if (extras[inst] === 'added') changed = true; }
+    catch { extras[inst] = 'none'; }
+  }
   return { bytes: changed ? CHB.writeSng(sng) : raw, extras };
 }
 
 function enrichCached(s, raw, onStep) {
-  const flags = extrasFlags(s), key = `${s.md5}|${+flags.lyrics}|${+flags.drums}`;
+  const flags = extrasFlags(s), key = `${s.md5}|${+flags.lyrics}|${+flags.drums}|${+flags.parts}`;
   if (!enrichedCache.has(key)) {
     const job = enrichBytes(s, raw, flags, onStep);
     job.catch(() => enrichedCache.delete(key));
@@ -180,6 +191,7 @@ async function prepareFrom(s, rawPromise, onStep) {
   const out = processSng(rich, want(), $('#allInst').checked, knobs);
   const added = [...out.added];
   if (extras.drums === 'added' || extras.drums === 'stems') added.push('X:drums');
+  for (const inst of ['bass', 'keys']) if (extras[inst] === 'added') added.push('X:' + inst);
   let bytes = out.bytes;
   const media = songBg[s.md5];
   if (media) bytes = CHB.writeSng(CHB.setBackground(CHB.readSng(bytes), media));
@@ -193,6 +205,10 @@ function extrasText(x) {
   if (x.drums === 'added') parts.push('batería creada desde el audio');
   if (x.drums === 'stems') parts.push('batería creada desde su pista');
   if (x.drums === 'none') parts.push('no se pudo crear la batería');
+  if (x.bass === 'added') parts.push('bajo creado desde su pista');
+  if (x.bass === 'none') parts.push('no se pudo crear el bajo');
+  if (x.keys === 'added') parts.push('teclado creado desde su pista');
+  if (x.keys === 'none') parts.push('no se pudo crear el teclado');
   return parts.join(' · ');
 }
 
@@ -652,8 +668,8 @@ async function folderSng(f, withAudio) {
 }
 // fixes one song; returns { note, changed: [{ name, data, original }] } (changed is empty when nothing had to change)
 async function fixOne(f, say) {
-  const flags = { lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked };
-  const src = f.kind === 'folder' ? await folderSng(f, flags.drums) : null;
+  const flags = { lyrics: $('#addLyrics').checked, drums: $('#addDrums').checked, parts: $('#addParts').checked };
+  const src = f.kind === 'folder' ? await folderSng(f, flags.drums || flags.parts) : null;
   const buf = src ? CHB.writeSng(src) : new Uint8Array(await (await f.getFile()).arrayBuffer());
   const { bytes: rich, extras } = await enrichBytes({ md5: f.path, artist: '', name: '' }, buf, flags, say);
   const { bytes, added } = processSng(rich, want(), $('#allInst').checked, knobs);
@@ -890,7 +906,8 @@ $('#moreBtn').onclick = () => doSearch(state.args, state.limit + 20, false);
 $('#filter').onchange = () => { if (state.args) doSearch({ ...state.args }, state.limit, false); };
 $('#shareSearch').onclick = () => { const a = state.args; const [por, q] = Object.entries(a)[0]; share({ q, por }, `Canciones de ${q} para Clone Hero`); };
 $('#asFolder').onchange = () => { savePrefs(); showSettingsSummary(); };
-for (const id of ['#needE', '#needM', '#needH', '#allInst', '#addLyrics', '#addDrums']) $(id).onchange = () => { showSettingsSummary(); render(); for (const el of document.querySelectorAll('[data-info]')) fillInfo(el); savePrefs(); };
+for (const id of ['#needE', '#needM', '#needH', '#allInst', '#addLyrics', '#addDrums', '#addParts']) $(id).onchange = () => { showSettingsSummary(); render(); for (const el of document.querySelectorAll('[data-info]')) fillInfo(el); savePrefs(); };
+for (const [from, to] of LIB_MIRROR) $(to).onchange = () => { $(from).checked = $(to).checked; $(from).onchange(); };
 // the image button of any song row shares one file picker
 let bgTarget = null;
 document.addEventListener('click', e => {
@@ -974,6 +991,7 @@ $('#soundBtn').onclick = () => {
   if (p && p.knobs) knobs = { ...CHB.DEFAULT_KNOBS, ...p.knobs };
   if (p && p.lyrics !== undefined) $('#addLyrics').checked = p.lyrics;
   if (p && p.drums !== undefined) $('#addDrums').checked = p.drums;
+  if (p && p.parts !== undefined) $('#addParts').checked = p.parts;
   if (p && p.folder !== undefined) $('#asFolder').checked = p.folder;
   showKnobs(); showSettingsSummary(); Analytics.init(); loadCommunity();
   // folded by default so the search is the first thing on screen; whatever the person chooses afterwards is remembered

@@ -384,6 +384,8 @@
   .pv-stats { color: var(--muted); font-size: 14px; }
 
   /* ---------- frequently asked questions: plain text people (and search engines) can read ---------- */
+  .lib-opts { align-items: center; gap: 6px 14px; margin: 4px 0 2px; }
+  .lib-note { margin: 4px 0 12px; font-size: 13px; }
   .faq { max-width: 860px; margin: 40px auto 24px; padding: 0 4px; }
   .faq h2 { font-family: var(--display); font-weight: 400; letter-spacing: 1px; font-size: 26px; color: var(--fire3); margin: 0 0 12px; }
   .faq details { border-top: 1px solid var(--line); }
@@ -461,7 +463,7 @@
 <body>
 <header class="stage">
   <div class="topbar"><span class="lang" role="group" aria-label="Idioma / Language" data-no-i18n><button data-lang="es" title="Español">ES</button><button data-lang="en" title="English">EN</button></span><button id="soundBtn" title="Sonidos de guitarra al buscar y al terminar descargas">🔇 Sonido</button></div>
-  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.7.0</button></div>
+  <div class="brand"><h1 class="logo">CH Buscador</h1><button class="ver" id="appVersion" title="Ver qué trae esta versión">v1.8.0</button></div>
   <p class="tagline">Busca cualquier canción para Clone Hero · <b>si no trae tu nivel, te lo creamos</b></p>
   <div class="highway" aria-hidden="true">
     <div class="road">
@@ -503,13 +505,14 @@
       <label class="chk lv-E"><input type="checkbox" id="needE" checked> Fácil</label>
       <label class="chk lv-M"><input type="checkbox" id="needM" checked> Medio</label>
       <label class="chk lv-H"><input type="checkbox" id="needH" checked> Difícil</label>
-      <label class="chk lv-B"><input type="checkbox" id="allInst" checked> También bajo, batería y teclado</label>
+      <label class="chk lv-B" title="Crea Fácil, Medio y Difícil también en esos instrumentos cuando la canción los trae"><input type="checkbox" id="allInst" checked> Niveles también para bajo, batería y teclado</label>
       <label class="chk" title="song.ini + chart + audio en una carpeta por canción. Para Clone Hero anterior a la 1.1 (no lee .sng) y para editarla en Moonscraper"><input type="checkbox" id="asFolder"> 📁 Guardar como carpeta</label>
     </div>
     <div class="row" style="margin-top:12px">
       <span class="sub">Si le falta:</span>
       <label class="chk"><input type="checkbox" id="addLyrics" checked> 🎤 Agregar la letra</label>
       <label class="chk" title="Tarda unos segundos más por canción"><input type="checkbox" id="addDrums"> 🥁 Crear la batería</label>
+      <label class="chk" title="Cuando la canción trae el audio del bajo o del teclado por separado pero no sus notas. Tarda unos segundos más"><input type="checkbox" id="addParts"> 🎸 Crear bajo y teclado desde su pista</label>
     </div>
     <details class="sub drum-help"><summary>🥁 <b>¿Cómo creo la batería?</b></summary><p>Marca <b>Crear la batería</b> y se crea sola al descargar las canciones que no la traen (en <b>▶ Ver</b> la pruebas antes). Para tu biblioteca, márcala y usa <b>Mi biblioteca → Revisar y arreglar</b>. Para una canción que nadie ha charteado, usa <b>🧪 Crear desde audio</b>.</p></details>
     <div class="knobs-info" id="knobsInfo"></div>
@@ -521,6 +524,13 @@
       <h2>✨ Mejoras</h2>
       <p class="sub" style="margin-top:0">Todo lo que ha cambiado desde que se lanzó CH Buscador, lo más nuevo primero. Muchas de estas mejoras salieron de comentarios de la comunidad: ¡gracias!</p>
       <div class="changes">
+        <div>
+          <h3>23 de noviembre de 2026 <small>v1.8.0</small></h3>
+          <ul>
+            <li><b>🎸 Bajo y teclado desde su pista:</b> si una canción trae el audio del bajo o del teclado por separado pero no sus notas, se crean con sus 4 niveles y siguen el ritmo del chart. Al descargar y en Mi biblioteca.</li>
+            <li><b>Mi biblioteca muestra sus opciones:</b> letra, batería y bajo/teclado se marcan junto a Revisar y arreglar, y explica qué se puede crear y qué no.</li>
+          </ul>
+        </div>
         <div>
           <h3>22 de noviembre de 2026 <small>v1.7.0</small></h3>
           <ul>
@@ -666,7 +676,13 @@
   <section id="view-lib" class="hidden">
     <div class="card">
       <h2>Mi biblioteca</h2>
-      <p class="sub" style="margin-top:0">Revisa las canciones de tu carpeta (y subcarpetas): archivos <b>.sng</b> y también canciones <b>en carpeta</b> (song.ini + notes.chart o notes.mid, las que se editan en Moonscraper). <b>Ver estadísticas</b> solo mira, no cambia nada. <b>Revisar y arreglar</b> les crea los niveles que falten (y la letra o la batería si las marcaste arriba) y guarda una copia <b>.original</b> de cada archivo que modifica.</p>
+      <p class="sub" style="margin-top:0">Revisa las canciones de tu carpeta (y subcarpetas): archivos <b>.sng</b> y también canciones <b>en carpeta</b> (song.ini + notes.chart o notes.mid, las que se editan en Moonscraper). <b>Ver estadísticas</b> solo mira, no cambia nada. <b>Revisar y arreglar</b> les crea los niveles que falten, más lo que marques aquí, y guarda una copia <b>.original</b> de cada archivo que modifica.</p>
+      <div class="row lib-opts"><span class="sub">Al arreglar, también:</span>
+        <label class="chk"><input type="checkbox" id="libLyrics"> 🎤 Agregar la letra</label>
+        <label class="chk" title="Tarda unos segundos más por canción"><input type="checkbox" id="libDrums"> 🥁 Crear la batería</label>
+        <label class="chk" title="Cuando la canción trae el audio del bajo o del teclado por separado pero no sus notas"><input type="checkbox" id="libParts"> 🎸 Crear bajo y teclado desde su pista</label>
+      </div>
+      <p class="sub lib-note">Solo se crean instrumentos que se puedan sacar del audio: la batería, y el bajo o el teclado si la canción trae su pista aparte. La letra se busca en internet y no todas las canciones la tienen.</p>
       <div class="row"><button id="statsLib">📊 Ver estadísticas</button><button class="primary" id="fixLib">Revisar y arreglar</button></div>
       <input type="file" id="libInput" webkitdirectory multiple hidden>
       <div class="log hidden" id="libLog"></div>

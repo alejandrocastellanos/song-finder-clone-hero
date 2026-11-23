@@ -793,6 +793,46 @@
     return true;
   }
 
+  /* Adds an Expert bass or keys track from notes in seconds: [{ t, end, lanes }] (end 0 = no sustain).
+     Notes go on the song's own 16th-note grid; an empty section or track of that instrument is replaced. */
+  const FRET_SECTION = { bass: 'ExpertDoubleBass', keys: 'ExpertKeyboard' }, FRET_PART = { bass: 'PART BASS', keys: 'PART KEYS' };
+  function addFretTrack(sng, inst, notes) {
+    const clock = songClock(sng), grid = clock.res / 4, items = [];
+    let last = -1;
+    for (const n of notes) {
+      const tick = Math.round(clock.toTick(n.t) / grid) * grid;
+      if (tick <= last) continue;
+      last = tick;
+      const len = n.end ? Math.max(0, Math.round((clock.toTick(n.end) - tick) / grid) * grid) : 0;
+      items.push({ tick, len, lanes: n.lanes });
+    }
+    if (!items.length) return false;
+    const { chart, mid } = chartOf(sng.files);
+    if (chart) {
+      const lines = [];
+      for (const it of items) for (const l of it.lanes) lines.push(`  ${it.tick} = N ${l} ${it.len}`);
+      const text = utf8.decode(chart.data).replace(new RegExp(`\\[${FRET_SECTION[inst]}\\]\\s*\\{\\s*\\}\\s*`, 'g'), '');
+      chart.data = enc.encode(text.replace(/\s*$/, '\r\n') + `[${FRET_SECTION[inst]}]\r\n{\r\n${lines.join('\r\n')}\r\n}\r\n`);
+    } else if (mid) {
+      const m = parseMidi(mid.data), name = FRET_PART[inst];
+      const latin = new TextDecoder('latin1'), named = t => t.some(e => e.meta === 3 && latin.decode(e.data).trim() === name);
+      const hasNotes = t => t.some(e => e.st >= 0x90 && e.st <= 0x9f && e.d2 > 0);
+      m.tracks = m.tracks.filter(t => !(named(t) && !hasNotes(t)));
+      const ev = [{ t: 0, meta: 3, data: enc.encode(name) }], tail = Math.max(1, clock.res >> 4);
+      for (const it of items) for (const l of it.lanes) {
+        ev.push({ t: it.tick, st: 0x90, d1: 96 + l, d2: 100, n: 2, pri: 1 }, { t: it.tick + Math.max(tail, it.len), st: 0x80, d1: 96 + l, d2: 0, n: 2, pri: -1 });
+      }
+      ev.forEach((e, i) => { e._i = i; });
+      ev.sort((x, y) => x.t - y.t || (x.pri || 0) - (y.pri || 0) || x._i - y._i);
+      m.tracks.push(ev);
+      mid.data = writeMidi(m);
+    } else return false;
+    const key = 'diff_' + inst, d = sng.meta.find(x => x[0] === key);
+    if (d) { if (d[1] === '-1' || d[1] === '') d[1] = '2'; } else sng.meta.push([key, '2']);
+    return true;
+  }
+  function hasPart(sng, inst) { return !!sngDifficulties(sng)[inst]; }
+
   /* ---------- custom background ---------- */
   const IMAGE_EXT = /\.(png|jpe?g)$/i, VIDEO_EXT = /\.(mp4|avi|webm|vp8|ogv|mpeg)$/i;
   /* media: { name, data }. The .sng format only registers background.png/jpg/jpeg and video.mp4/avi/webm/vp8/ogv/mpeg. */
@@ -936,7 +976,7 @@
   const api = {
     readSng, writeSng, readSngIndex, xorData, parseMidi, writeMidi, reduceChartText, reduceMidi, processSng, sngDifficulties, songTimeline,
     levelsFor, DEFAULT_KNOBS, spacedPick, chartOf, makeZip, sngToZip, isSongFolder, folderToSng, sngToFolder, folderName, NOTES_FILE,
-    peekSng, songClock, hasLyrics, parseLrc, lrcToPhrases, findLyrics, addLyrics, hasDrums, addDrumTrack, setBackground,
+    peekSng, songClock, hasLyrics, parseLrc, lrcToPhrases, findLyrics, addLyrics, hasDrums, addDrumTrack, addFretTrack, hasPart, setBackground,
     encoreSearch, fetchSng, findSongs, pickBest, nativeDiffs, hasNative, canFill, fileName, summarize,
     INST_LABEL, LEVEL_LABEL, FILES,
   };
